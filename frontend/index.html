@@ -1,1 +1,130 @@
-<h1>PVCHAT - Serveur Nginx OK</h1>
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PVCHAT - Messagerie sécurisée</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="script.js" defer></script>
+</head>
+<body>
+    <div class="app">
+
+        <aside class="sidebar">
+            <div class="logo">
+                <span class="logo-icon">🔒</span>
+                <h1>PVCHAT</h1>
+            </div>
+
+            <p class="sidebar-title">MESSAGERIE</p>
+
+            <input
+                type="text"
+                id="searchInput"
+                class="search"
+                placeholder="Rechercher..."
+            >
+
+            <div id="conversationList" class="conversation-list">
+
+                <button class="conversation active"
+                        data-name="Équipe projet"
+                        data-id="equipe">
+                    <span class="avatar purple">EP</span>
+                    <span class="conversation-info">
+                        <strong>Équipe projet</strong>
+                        <small>Bienvenue sur PVCHAT !</small>
+                    </span>
+                </button>
+
+                <button class="conversation"
+                        data-name="Augustin"
+                        data-id="augustin">
+                    <span class="avatar blue">A</span>
+                    <span class="conversation-info">
+                        <strong>Augustin</strong>
+                        <small>Discussion privée</small>
+                    </span>
+                </button>
+
+                <button class="conversation"
+                        data-name="Ethan"
+                        data-id="ethan">
+                    <span class="avatar green">E</span>
+                    <span class="conversation-info">
+                        <strong>Ethan</strong>
+                        <small>Discussion privée</small>
+                    </span>
+                </button>
+
+                <button class="conversation"
+                        data-name="Maxence"
+                        data-id="maxence">
+                    <span class="avatar orange">M</span>
+                    <span class="conversation-info">
+                        <strong>Maxence</strong>
+                        <small>Discussion privée</small>
+                    </span>
+                </button>
+
+            </div>
+
+            <button id="newConversation" class="new-conversation">
+                + Nouvelle conversation
+            </button>
+
+            <div class="profile">
+                <div class="avatar purple">MB</div>
+                <div class="profile-info">
+                    <strong>Mon profil</strong>
+                    <small>Mode démonstration</small>
+                </div>
+                <button id="settingsButton" class="settings-button"
+                        title="Paramètres">⚙</button>
+            </div>
+        </aside>
+
+        <main class="chat">
+            <header class="chat-header">
+                <div class="chat-contact">
+                    <div id="headerAvatar" class="avatar purple">EP</div>
+                    <div>
+                        <h2 id="chatTitle">Équipe projet</h2>
+                        <p id="chatStatus">Conversation de démonstration</p>
+                    </div>
+                </div>
+
+                <button id="infoButton" class="info-button"
+                        title="Informations">ⓘ</button>
+            </header>
+
+            <section id="messages" class="messages">
+                <!-- Les messages apparaissent ici -->
+            </section>
+
+            <footer class="composer">
+                <div id="attachmentPreview" class="attachment-preview"></div>
+
+                <div class="composer-box">
+                    <label for="fileInput" class="attachment-button"
+                           title="Joindre un fichier">＋</label>
+
+                    <input type="file" id="fileInput" hidden>
+
+                    <textarea id="messageInput"
+                              placeholder="Écrire un message..."
+                              rows="1"></textarea>
+
+                    <button id="sendButton" class="send-button">
+                        Envoyer ➤
+                    </button>
+                </div>
+
+                <p class="security-note">
+                    🔒 Démonstration — chiffrement non activé
+                </p>
+            </footer>
+        </main>
+    </div>
+</body>
+</html>
