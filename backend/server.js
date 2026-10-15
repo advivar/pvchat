@@ -13,11 +13,12 @@ app.use(cors());
 // Configuration de la connexion PostgreSQL
 const pool = new Pool({
     user: 'postgres',
-    host: 'localhost', // À adapter avec la configuration Docker d'Augustin
+    host: 'pvchat-db', // Doit être pvchat-db et non localhost
     database: 'pvchat_db',
     password: 'mot_de_passe_securise',
     port: 5432,
 });
+
 
 const SECRET_KEY = 'cle_secrete_temporaire_pour_jwt'; // À mettre dans un fichier .env plus tard
 
@@ -32,9 +33,13 @@ app.post('/api/register', async (req, res) => {
         );
         res.status(201).json({ message: 'Utilisateur créé', user: result.rows[0] });
     } catch (err) {
-        if (err.code === '23505') return res.status(400).json({ error: 'Ce nom d\'utilisateur existe déjà.' });
-        res.status(500).json({ error: 'Erreur serveur.' });
-    }
+    console.error("Erreur technique de la BDD :", err); // Ligne à ajouter
+    if (err.code === '23505') return res.status(400).json({ error: 'Ce nom d\'utilisateur existe déjà.' });
+    res.status(500).json({ error: 'Erreur serveur.' });
+}
+    
+    
+
 });
 
 // --- API REST : CONNEXION ---
