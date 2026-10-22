@@ -18,11 +18,11 @@
         </p>
 
         <form id="login-form">
-            <label for="email">Adresse e-mail</label>
+            <label for="email">Nom d'utilisateur</label>
             <input
-                type="email"
+                type="text"
                 id="email"
-                placeholder="exemple@email.com"
+                placeholder="votre_nom_utilisateur"
                 required
             >
 
@@ -49,12 +49,37 @@
         </a>
     </main>
 
-    <script>
-        document.getElementById("login-form").addEventListener("submit", function(event) {
-            event.preventDefault();
-            alert("La connexion sera activée lorsque le backend sera intégré.");
-        });
-    </script>
+<script>
+    document.getElementById("login-form").addEventListener("submit", async function(event) {
+        event.preventDefault();
+        
+        // On récupère les valeurs avec les ID exacts du HTML de Mathieu
+        const username = document.getElementById("email").value;
+        const password = document.getElementById("password").value;
+        
+        try {
+            const response = await fetch('/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                // Sauvegarde le Token JWT
+                localStorage.setItem('pvchat_token', data.token);
+                alert('Connexion réussie !');
+                window.location.href = 'index.html';
+            } else {
+                alert('Erreur : ' + (data.error || 'Identifiants incorrects'));
+            }
+        } catch (err) {
+            console.error('Erreur réseau :', err);
+            alert("Impossible de contacter le serveur.");
+        }
+    });
+</script>
 
 </body>
 </html>
