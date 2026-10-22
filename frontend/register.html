@@ -67,21 +67,39 @@
         </a>
     </main>
 
-    <script>
-        document.getElementById("register-form").addEventListener("submit", function(event) {
-            event.preventDefault();
+<script>
+    document.getElementById("register-form").addEventListener("submit", async function(event) {
+        event.preventDefault();
+        
+        const username = event.target.username.value;
+        const password = event.target.password.value;
+        const confirmation = document.getElementById("confirm-password") ? document.getElementById("confirm-password").value : event.target['confirm-password'].value;
+        
+        if (password !== confirmation) {
+            alert("Les deux mots de passe ne correspondent pas.");
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
 
-            const password = document.getElementById("password").value;
-            const confirmation = document.getElementById("confirm-password").value;
-
-            if (password !== confirmation) {
-                alert("Les deux mots de passe ne correspondent pas.");
-                return;
+            if (response.status === 200 || response.status === 201) {
+                alert('Inscription réussie ! Tu vas être redirigé.');
+                window.location.href = 'login.html';
+            } else {
+                const data = await response.json();
+                alert('Erreur : ' + (data.error || 'Erreur inconnue'));
             }
-
-            alert("L'inscription sera activée lorsque le backend sera intégré.");
-        });
-    </script>
+        } catch (err) {
+            console.error('Erreur réseau :', err);
+            alert("Impossible de contacter le serveur.");
+        }
+    });
+</script>
 
 </body>
 </html>
