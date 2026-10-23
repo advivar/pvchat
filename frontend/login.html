@@ -17,12 +17,14 @@
             Connectez-vous pour accéder à vos conversations sécurisées.
         </p>
 
+        <div id="formMessage" class="form-message" hidden></div>
+
         <form id="login-form">
-            <label for="email">Nom d'utilisateur</label>
+            <label for="username">Nom d'utilisateur</label>
             <input
                 type="text"
-                id="email"
-                placeholder="votre_nom_utilisateur"
+                id="username"
+                placeholder="Votre nom d'utilisateur"
                 required
             >
 
@@ -34,7 +36,7 @@
                 required
             >
 
-            <button type="submit" class="auth-button">
+            <button type="submit" id="submitBtn" class="auth-button">
                 Se connecter
             </button>
         </form>
@@ -43,20 +45,27 @@
             Pas encore de compte ?
             <a href="register.html">Créer un compte</a>
         </p>
-
-        <a href="index.html" class="auth-back">
-            ← Retour à l'interface de chat
-        </a>
     </main>
 
 <script>
+    const formMessage = document.getElementById("formMessage");
+    const submitBtn = document.getElementById("submitBtn");
+
+    function showMessage(text, isError) {
+        formMessage.textContent = text;
+        formMessage.className = "form-message " + (isError ? "form-message-error" : "form-message-success");
+        formMessage.hidden = false;
+    }
+
     document.getElementById("login-form").addEventListener("submit", async function(event) {
         event.preventDefault();
-        
-        // On récupère les valeurs avec les ID exacts du HTML de Mathieu
-        const username = document.getElementById("email").value;
+
+        const username = document.getElementById("username").value.trim();
         const password = document.getElementById("password").value;
-        
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Connexion...";
+
         try {
             const response = await fetch('/api/login', {
                 method: 'POST',
@@ -67,16 +76,19 @@
             const data = await response.json();
 
             if (response.ok) {
-                // Sauvegarde le Token JWT
                 localStorage.setItem('pvchat_token', data.token);
-                alert('Connexion réussie !');
-                window.location.href = 'index.html';
+                localStorage.setItem('pvchat_username', data.user.username);
+                showMessage("Connexion réussie ! Redirection...", false);
+                setTimeout(() => window.location.href = "index.html", 800);
             } else {
-                alert('Erreur : ' + (data.error || 'Identifiants incorrects'));
+                showMessage(data.error || "Identifiants incorrects.", true);
+                submitBtn.disabled = false;
+                submitBtn.textContent = "Se connecter";
             }
         } catch (err) {
-            console.error('Erreur réseau :', err);
-            alert("Impossible de contacter le serveur.");
+            showMessage("Impossible de contacter le serveur. Vérifiez votre connexion.", true);
+            submitBtn.disabled = false;
+            submitBtn.textContent = "Se connecter";
         }
     });
 </script>
