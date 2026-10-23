@@ -24,7 +24,10 @@ function renderConversationList(conversations, currentConversationId, onClickCal
     list.innerHTML = "";
 
     if (conversations.length === 0) {
-        list.innerHTML = `<p class="empty-list-notice">Aucune discussion. Créez-en une avec "+" ci-dessous.</p>`;
+        const emptyP = document.createElement("p");
+        emptyP.className = "empty-list-notice";
+        emptyP.textContent = "Aucune discussion. Créez-en une avec '+' ci-dessous.";
+        list.appendChild(emptyP);
         return;
     }
 
@@ -37,13 +40,24 @@ function renderConversationList(conversations, currentConversationId, onClickCal
         const color = getAvatarColor(conv.other_username);
         const preview = conv.last_message || "Nouvelle discussion";
 
-        btn.innerHTML = `
-            <span class="avatar ${color}">${getInitials(conv.other_username)}</span>
-            <span class="conversation-info">
-                <strong>${conv.other_username}</strong>
-                <small>${preview}</small>
-            </span>
-        `;
+        const avatarSpan = document.createElement("span");
+        avatarSpan.className = `avatar ${color}`;
+        avatarSpan.textContent = getInitials(conv.other_username);
+
+        const infoSpan = document.createElement("span");
+        infoSpan.className = "conversation-info";
+
+        const strong = document.createElement("strong");
+        strong.textContent = conv.other_username;
+
+        const small = document.createElement("small");
+        small.textContent = preview;
+
+        infoSpan.appendChild(strong);
+        infoSpan.appendChild(small);
+        btn.appendChild(avatarSpan);
+        btn.appendChild(infoSpan);
+
         btn.addEventListener("click", () => onClickCallback(conv.id));
         list.appendChild(btn);
     });
@@ -55,7 +69,9 @@ function renderMessages(messages, currentUser) {
 
     const sep = document.createElement("div");
     sep.className = "date-separator";
-    sep.innerHTML = "<span>Discussion</span>";
+    const sepSpan = document.createElement("span");
+    sepSpan.textContent = "Discussion";
+    sep.appendChild(sepSpan);
     zone.appendChild(sep);
 
     if (messages.length === 0) {
@@ -135,8 +151,9 @@ function hideWelcomeScreen() {
 
 function updateChatHeader(username) {
     const color = getAvatarColor(username);
-    document.getElementById("headerAvatar").className = `avatar ${color}`;
-    document.getElementById("headerAvatar").textContent = getInitials(username);
+    const headerAvatar = document.getElementById("headerAvatar");
+    headerAvatar.className = `avatar ${color}`;
+    headerAvatar.textContent = getInitials(username);
     document.getElementById("chatTitle").textContent = username;
     document.getElementById("chatStatus").textContent = "Discussion privée";
 }

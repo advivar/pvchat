@@ -165,10 +165,17 @@ document.addEventListener("DOMContentLoaded", async () => {
                     const item = document.createElement("div");
                     item.className = "autocomplete-item";
                     const color = getAvatarColor(user.username);
-                    item.innerHTML = `
-                        <div class="avatar ${color}">${getInitials(user.username)}</div>
-                        <strong>${user.username}</strong>
-                    `;
+
+                    const avatarDiv = document.createElement("div");
+                    avatarDiv.className = `avatar ${color}`;
+                    avatarDiv.textContent = getInitials(user.username);
+
+                    const strong = document.createElement("strong");
+                    strong.textContent = user.username;
+
+                    item.appendChild(avatarDiv);
+                    item.appendChild(strong);
+
                     item.addEventListener("click", () => selectUserForChat(user.id));
                     results.appendChild(item);
                 });
@@ -221,12 +228,26 @@ document.addEventListener("DOMContentLoaded", async () => {
 // --- PROFIL SIDEBAR ---
 
 function renderProfileLoggedOut() {
-    document.getElementById("profileSection").innerHTML = `
-        <div class="auth-actions">
-            <a href="login.html" class="auth-btn auth-btn-primary">Connexion</a>
-            <a href="register.html" class="auth-btn auth-btn-secondary">Inscription</a>
-        </div>
-    `;
+    const profileSection = document.getElementById("profileSection");
+    profileSection.innerHTML = "";
+
+    const actionsDiv = document.createElement("div");
+    actionsDiv.className = "auth-actions";
+
+    const loginLink = document.createElement("a");
+    loginLink.href = "login.html";
+    loginLink.className = "auth-btn auth-btn-primary";
+    loginLink.textContent = "Connexion";
+
+    const registerLink = document.createElement("a");
+    registerLink.href = "register.html";
+    registerLink.className = "auth-btn auth-btn-secondary";
+    registerLink.textContent = "Inscription";
+
+    actionsDiv.appendChild(loginLink);
+    actionsDiv.appendChild(registerLink);
+    profileSection.appendChild(actionsDiv);
+
     document.getElementById("messageInput").disabled = true;
     document.getElementById("sendButton").disabled = true;
     document.getElementById("messageInput").placeholder = "Connectez-vous pour discuter...";
@@ -234,19 +255,38 @@ function renderProfileLoggedOut() {
 
 function renderProfileLoggedIn(user) {
     const color = getAvatarColor(user.username);
-    document.getElementById("profileSection").innerHTML = `
-        <div class="avatar ${color}">${getInitials(user.username)}</div>
-        <div class="profile-info">
-            <strong>${user.username}</strong>
-            <small>En ligne</small>
-        </div>
-        <button id="logoutButton" class="logout-button">Déconnexion</button>
-    `;
-    document.getElementById("logoutButton").addEventListener("click", () => {
+    const profileSection = document.getElementById("profileSection");
+    profileSection.innerHTML = "";
+
+    const avatarDiv = document.createElement("div");
+    avatarDiv.className = `avatar ${color}`;
+    avatarDiv.textContent = getInitials(user.username);
+
+    const infoDiv = document.createElement("div");
+    infoDiv.className = "profile-info";
+
+    const strong = document.createElement("strong");
+    strong.textContent = user.username;
+
+    const small = document.createElement("small");
+    small.textContent = "En ligne";
+
+    infoDiv.appendChild(strong);
+    infoDiv.appendChild(small);
+
+    const logoutBtn = document.createElement("button");
+    logoutBtn.id = "logoutButton";
+    logoutBtn.className = "logout-button";
+    logoutBtn.textContent = "Déconnexion";
+    logoutBtn.addEventListener("click", () => {
         localStorage.removeItem("pvchat_token");
         localStorage.removeItem("pvchat_username");
         window.location.reload();
     });
+
+    profileSection.appendChild(avatarDiv);
+    profileSection.appendChild(infoDiv);
+    profileSection.appendChild(logoutBtn);
 
     // Active la zone de saisie seulement quand une conv est ouverte
     document.getElementById("messageInput").disabled = true;

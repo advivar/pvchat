@@ -7,7 +7,14 @@ const WebSocket = require('ws');
 const cors = require('cors');
 
 const app = express();
-app.use(express.json());
+
+// Masque le header X-Powered-By pour ne pas exposer Express
+app.disable('x-powered-by');
+
+// Fait confiance au reverse proxy Nginx pour recuperer la vraie IP client
+app.set('trust proxy', 1);
+
+app.use(express.json({ limit: '1mb' }));
 app.use(cors());
 
 // Connexion PostgreSQL
@@ -15,7 +22,50 @@ const pool = new Pool({
     connectionString: process.env.DATABASE_URL
 });
 
-const SECRET_KEY = process.env.JWT_SECRET || 'cle_secrete_temporaire_pour_jwt';
+// Cle secrete JWT (doit etre definie dans les variables d'environnement en prod)
+const SECRET_KEY = process.env.JWT_SECRET || 'cle_secrete_temporaire_a_changer_en_production';
+if (!process.env.JWT_SECRET) {
+    console.warn('[SECURITE] Attention : JWT_SECRET non defini dans les variables d\'environnement !');
+}
+
+// Validation regex pour le nom d'utilisateur (3 a 30 caracteres alphanumeriques, tiret ou underscore)
+const USERNAME_REGEX = /^[a-zA-Z0-9_\-\.]{3,30}$/;
+
+// Rate limiting simple en memoire (protection anti brute-force et anti spam)
+const rateLimits = new Map();
+
+function rateLimiter(windowMs, maxRequests) {
+    return (req, res, next) => {
+        const ip = req.ip || req.connection.remoteAddress || 'unknown';
+        const now = Date.now();
+        const record = rateLimits.get(ip) || { count: 0, resetTime: now + windowMs };
+
+        if (now > record.resetTime) {
+            record.count = 1;
+            record.resetTime = now + windowMs;
+        } else {
+            record.count += 1;
+        }
+
+        rateLimits.set(ip, record);
+
+        if (record.count > maxRequests) {
+            return res.status(429).json({ error: 'Trop de requêtes. Veuillez patienter un moment.' });
+        }
+
+        next();
+    };
+}
+
+// Nettoyage de la memoire du rate limiter chaque minute
+setInterval(() => {
+    const now = Date.now();
+    for (const [key, value] of rateLimits.entries()) {
+        if (now > value.resetTime) {
+            rateLimits.delete(key);
+        }
+    }
+}, 60000);
 
 // Initialisation des tables si elles n'existent pas
 async function initDb() {
@@ -65,11 +115,20 @@ function authMiddleware(req, res, next) {
     });
 }
 
-// Inscription
-app.post('/register', async (req, res) => {
+// Inscription (limite a 5 essais par minute par IP)
+app.post('/register', rateLimiter(60000, 5), async (req, res) => {
     const { username, password } = req.body;
-    if (!username || !password) {
-        return res.status(400).json({ error: 'Nom d\'utilisateur et mot de passe obligatoires.' });
+
+    if (!username || typeof username !== 'string' || !USERNAME_REGEX.test(username.trim())) {
+        return res.status(400).json({
+            error: 'Le nom d\'utilisateur doit contenir entre 3 et 30 caractères (lettres, chiffres, tirets, points).'
+        });
+    }
+
+    if (!password || typeof password !== 'string' || password.length < 6 || password.length > 128) {
+        return res.status(400).json({
+            error: 'Le mot de passe doit contenir entre 6 et 128 caractères.'
+        });
     }
 
     try {
@@ -88,10 +147,11 @@ app.post('/register', async (req, res) => {
     }
 });
 
-// Connexion
-app.post('/login', async (req, res) => {
+// Connexion (limite a 10 essais par minute par IP pour contrer le brute-force)
+app.post('/login', rateLimiter(60000, 10), async (req, res) => {
     const { username, password } = req.body;
-    if (!username || !password) {
+
+    if (!username || !password || typeof username !== 'string' || typeof password !== 'string') {
         return res.status(400).json({ error: 'Identifiants incomplets.' });
     }
 
@@ -118,13 +178,13 @@ app.get('/me', authMiddleware, (req, res) => {
 
 // Recherche des utilisateurs pour autocompletion
 app.get('/users/search', authMiddleware, async (req, res) => {
-    const query = (req.query.q || '').trim();
-    if (!query) return res.json([]);
+    const rawQuery = String(req.query.q || '').trim().slice(0, 50);
+    if (!rawQuery) return res.json([]);
 
     try {
         const result = await pool.query(
             'SELECT id, username FROM users WHERE username ILIKE $1 AND id != $2 ORDER BY username ASC LIMIT 10',
-            [`%${query}%`, req.user.userId]
+            [`%${rawQuery}%`, req.user.userId]
         );
         res.json(result.rows);
     } catch (err) {
@@ -166,26 +226,17 @@ app.get('/conversations', authMiddleware, async (req, res) => {
 // Creer ou recuperer une conversation existante (pas de doublon)
 app.post('/conversations', authMiddleware, async (req, res) => {
     const currentUserId = req.user.userId;
-    let targetUserId = req.body.targetUserId;
-    const targetUsername = req.body.targetUsername;
+    let targetUserId = parseInt(req.body.targetUserId);
+
+    if (isNaN(targetUserId)) {
+        return res.status(400).json({ error: 'Destinataire invalide.' });
+    }
+
+    if (currentUserId === targetUserId) {
+        return res.status(400).json({ error: 'Impossible de creer un chat avec vous-meme.' });
+    }
 
     try {
-        if (!targetUserId && targetUsername) {
-            const userCheck = await pool.query('SELECT id, username FROM users WHERE username = $1', [targetUsername.trim()]);
-            if (userCheck.rows.length === 0) {
-                return res.status(404).json({ error: 'Utilisateur introuvable.' });
-            }
-            targetUserId = userCheck.rows[0].id;
-        }
-
-        if (!targetUserId) {
-            return res.status(400).json({ error: 'Destinataire manquant.' });
-        }
-
-        if (currentUserId === targetUserId) {
-            return res.status(400).json({ error: 'Impossible de creer un chat avec vous-meme.' });
-        }
-
         // Tri des IDs pour la contrainte unique
         const u1 = Math.min(currentUserId, targetUserId);
         const u2 = Math.max(currentUserId, targetUserId);
@@ -215,6 +266,10 @@ app.post('/conversations', authMiddleware, async (req, res) => {
         const newId = insert.rows[0].id;
         const target = await pool.query('SELECT id, username FROM users WHERE id = $1', [targetUserId]);
 
+        if (target.rows.length === 0) {
+            return res.status(404).json({ error: 'Utilisateur introuvable.' });
+        }
+
         res.status(201).json({
             conversation: {
                 id: newId,
@@ -230,10 +285,14 @@ app.post('/conversations', authMiddleware, async (req, res) => {
     }
 });
 
-// Messages d'une conversation
+// Messages d'une conversation (verifie l'appartenance)
 app.get('/conversations/:id/messages', authMiddleware, async (req, res) => {
     const convId = parseInt(req.params.id);
     const userId = req.user.userId;
+
+    if (isNaN(convId)) {
+        return res.status(400).json({ error: 'ID de conversation invalide.' });
+    }
 
     try {
         const check = await pool.query(
@@ -241,7 +300,7 @@ app.get('/conversations/:id/messages', authMiddleware, async (req, res) => {
             [convId, userId]
         );
         if (check.rows.length === 0) {
-            return res.status(403).json({ error: 'Acces refuse.' });
+            return res.status(403).json({ error: 'Acces refuse a cette conversation.' });
         }
 
         const msgs = await pool.query(
@@ -260,14 +319,22 @@ app.get('/conversations/:id/messages', authMiddleware, async (req, res) => {
     }
 });
 
-// Envoyer un message
-app.post('/conversations/:id/messages', authMiddleware, async (req, res) => {
+// Envoyer un message (limite a 20 messages par 10s pour eviter le spam)
+app.post('/conversations/:id/messages', authMiddleware, rateLimiter(10000, 20), async (req, res) => {
     const convId = parseInt(req.params.id);
     const userId = req.user.userId;
     const { content } = req.body;
 
-    if (!content || !content.trim()) {
+    if (isNaN(convId)) {
+        return res.status(400).json({ error: 'ID de conversation invalide.' });
+    }
+
+    if (!content || typeof content !== 'string' || !content.trim()) {
         return res.status(400).json({ error: 'Message vide.' });
+    }
+
+    if (content.length > 5000) {
+        return res.status(400).json({ error: 'Le message est trop long (maximum 5000 caractères).' });
     }
 
     try {
@@ -279,6 +346,8 @@ app.post('/conversations/:id/messages', authMiddleware, async (req, res) => {
             return res.status(403).json({ error: 'Acces refuse.' });
         }
 
+        const conv = check.rows[0];
+
         const insert = await pool.query(
             'INSERT INTO messages (conversation_id, sender_id, content) VALUES ($1, $2, $3) RETURNING id, conversation_id, sender_id, content, created_at',
             [convId, userId, content.trim()]
@@ -287,8 +356,8 @@ app.post('/conversations/:id/messages', authMiddleware, async (req, res) => {
         const newMsg = insert.rows[0];
         newMsg.sender_name = req.user.username;
 
-        // Diffusion websocket en direct
-        broadcast({
+        // Diffusion websocket UNIQUEMENT aux deux participants autorises
+        broadcastToConversation([conv.user1_id, conv.user2_id], {
             type: 'new_message',
             message: newMsg
         });
@@ -300,24 +369,45 @@ app.post('/conversations/:id/messages', authMiddleware, async (req, res) => {
     }
 });
 
-// WebSocket temps reel
+// --- WEBSOCKET TEMPS REEL SECURISE ---
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-function broadcast(data) {
+wss.on('connection', (ws, req) => {
+    // Authentification obligatoire par token JWT via query param (?token=...)
+    try {
+        const url = new URL(req.url, 'http://localhost');
+        const token = url.searchParams.get('token');
+
+        if (!token) {
+            ws.close(4001, 'Token manquant');
+            return;
+        }
+
+        jwt.verify(token, SECRET_KEY, (err, decoded) => {
+            if (err) {
+                ws.close(4002, 'Token invalide');
+                return;
+            }
+            ws.userId = decoded.userId;
+            ws.username = decoded.username;
+        });
+    } catch (e) {
+        ws.close(4000, 'Erreur de connexion');
+    }
+
+    ws.on('error', () => {});
+});
+
+// Diffuse uniquement aux destinataires autorises (confidentialite stricte)
+function broadcastToConversation(participantIds, data) {
     const payload = JSON.stringify(data);
     wss.clients.forEach((client) => {
-        if (client.readyState === WebSocket.OPEN) {
+        if (client.readyState === WebSocket.OPEN && participantIds.includes(client.userId)) {
             client.send(payload);
         }
     });
 }
-
-wss.on('connection', (ws) => {
-    ws.on('message', (message) => {
-        // En cas de message entrant brut
-    });
-});
 
 // Lancement
 const PORT = process.env.PORT || 3000;

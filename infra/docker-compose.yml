@@ -23,6 +23,7 @@ services:
     restart: unless-stopped
     environment:
       PORT: 3000
+      JWT_SECRET: ${JWT_SECRET:-pvchat_secret_jwt_change_in_production}
       DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}
     depends_on:
       postgres:
