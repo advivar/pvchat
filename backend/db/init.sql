@@ -1,4 +1,4 @@
--- Création de la table des utilisateurs
+-- Table des utilisateurs
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     username VARCHAR(50) UNIQUE NOT NULL,
@@ -6,18 +6,27 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Création de la table des salons (pour les futurs chats de groupe)
-CREATE TABLE IF NOT EXISTS rooms (
+-- Table des conversations privees (1 a 1)
+CREATE TABLE IF NOT EXISTS conversations (
     id SERIAL PRIMARY KEY,
-    name VARCHAR(100) UNIQUE NOT NULL,
+    user1_id INT REFERENCES users(id) ON DELETE CASCADE,
+    user2_id INT REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT unique_conversation UNIQUE (user1_id, user2_id)
+);
+
+-- Table des messages
+CREATE TABLE IF NOT EXISTS messages (
+    id SERIAL PRIMARY KEY,
+    conversation_id INT REFERENCES conversations(id) ON DELETE CASCADE,
+    sender_id INT REFERENCES users(id) ON DELETE CASCADE,
+    content TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Création de la table des messages (le contenu sera chiffré côté client plus tard)
-CREATE TABLE IF NOT EXISTS messages (
+-- Table des salons (pour plus tard si on fait des groupes)
+CREATE TABLE IF NOT EXISTS rooms (
     id SERIAL PRIMARY KEY,
-    room_id INT REFERENCES rooms(id) ON DELETE CASCADE,
-    sender_id INT REFERENCES users(id) ON DELETE SET NULL,
-    encrypted_content TEXT NOT NULL,
+    name VARCHAR(100) UNIQUE NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

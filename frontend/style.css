@@ -607,3 +607,226 @@ button {
         padding: 24px;
     }
 }
+
+
+/* Modales d'information et de creation */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(5, 7, 12, 0.75);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    backdrop-filter: blur(4px);
+}
+
+.modal-overlay[hidden] {
+    display: none !important;
+}
+
+.modal-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 24px;
+    width: 90%;
+    max-width: 440px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+}
+
+.modal-header h3 {
+    font-size: 18px;
+    color: var(--text);
+}
+
+.modal-close {
+    background: transparent;
+    border: none;
+    font-size: 24px;
+    line-height: 1;
+    color: var(--muted);
+    cursor: pointer;
+}
+
+.modal-close:hover {
+    color: var(--text);
+}
+
+.modal-body {
+    color: var(--text);
+    font-size: 14px;
+}
+
+/* Autocompletion des utilisateurs */
+.autocomplete-list {
+    max-height: 200px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.autocomplete-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    background: var(--sidebar);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.autocomplete-item:hover {
+    background: var(--hover);
+    border-color: var(--purple);
+}
+
+.autocomplete-item strong {
+    font-size: 14px;
+    color: var(--text);
+}
+
+/* Boutons auth dans la sidebar */
+.auth-actions {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+}
+
+.auth-btn {
+    flex: 1;
+    text-align: center;
+    padding: 10px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: bold;
+    text-decoration: none;
+    display: inline-block;
+    transition: 0.15s;
+}
+
+.auth-btn-primary {
+    background: var(--purple);
+    color: white;
+}
+
+.auth-btn-primary:hover {
+    background: #7c4af0;
+}
+
+.auth-btn-secondary {
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--border);
+}
+
+.auth-btn-secondary:hover {
+    background: var(--hover);
+}
+
+.logout-button {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 12px;
+    color: var(--muted);
+    font-size: 13px;
+    cursor: pointer;
+    transition: 0.15s;
+    white-space: nowrap;
+}
+
+.logout-button:hover {
+    color: #ef4444;
+    border-color: #ef4444;
+}
+
+.empty-list-notice {
+    padding: 20px 10px;
+    color: var(--muted);
+    font-size: 13px;
+    text-align: center;
+    line-height: 1.6;
+}
+
+/* Messages d'erreur et succes inline dans les formulaires */
+.form-message {
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    line-height: 1.5;
+    margin-bottom: 14px;
+    text-align: center;
+}
+
+.form-message-error {
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    color: #fc8181;
+}
+
+.form-message-success {
+    background: rgba(52, 211, 153, 0.12);
+    border: 1px solid rgba(52, 211, 153, 0.4);
+    color: #6ee7b7;
+}
+
+/* Page de bienvenue quand aucune conversation n'est ouverte */
+.welcome-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    padding: 40px;
+    text-align: center;
+    gap: 16px;
+    color: var(--muted);
+}
+
+.welcome-icon {
+    font-size: 52px;
+    margin-bottom: 8px;
+}
+
+.welcome-screen h2 {
+    font-size: 22px;
+    color: var(--text);
+    font-weight: 600;
+}
+
+.welcome-screen p {
+    font-size: 14px;
+    line-height: 1.6;
+    max-width: 380px;
+}
+
+.welcome-github-link {
+    display: inline-block;
+    margin-top: 12px;
+    padding: 10px 20px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 13px;
+    transition: 0.15s;
+}
+
+.welcome-github-link:hover {
+    background: var(--hover);
+    color: var(--text);
+    border-color: var(--purple);
+}
