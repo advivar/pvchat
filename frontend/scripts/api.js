@@ -63,3 +63,25 @@ async function apiSearchUsers(query) {
     if (!res.ok) throw new Error("Erreur serveur");
     return await res.json();
 }
+
+// Enregistrer ma clé publique sur le serveur
+async function apiSavePublicKey(publicKey) {
+    const res = await fetch(`${API_BASE}/users/me/public-key`, {
+        method: "PUT",
+        headers: authHeaders(),
+        body: JSON.stringify({ public_key: publicKey })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Erreur sauvegarde clé publique");
+    return data;
+}
+
+// Récupérer la clé publique d'un autre utilisateur
+async function apiGetUserPublicKey(userId) {
+    const res = await fetch(`${API_BASE}/users/${userId}/public-key`, {
+        headers: authHeaders()
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Erreur récupération clé publique");
+    return data.public_key;
+}

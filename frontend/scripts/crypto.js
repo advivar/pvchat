@@ -76,3 +76,23 @@ async function decryptMessage(encryptedJsonString, sharedKey) {
         return "⚠️ [Message chiffré - Impossible de déchiffrer]";
     }
 }
+
+// Sauvegarder la clé privée localement dans le navigateur
+async function storePrivateKey(privateKey) {
+    const exported = await window.crypto.subtle.exportKey("pkcs8", privateKey);
+    localStorage.setItem("pvchat_private_key", btoa(String.fromCharCode(...new Uint8Array(exported))));
+}
+
+// Charger la clé privée locale
+async function getLocalPrivateKey() {
+    const pem = localStorage.getItem("pvchat_private_key");
+    if (!pem) return null;
+    const binaryDer = Uint8Array.from(atob(pem), c => c.charCodeAt(0));
+    return await window.crypto.subtle.importKey(
+        "pkcs8",
+        binaryDer,
+        { name: "ECDH", namedCurve: "P-256" },
+        true,
+        ["deriveKey", "deriveBits"]
+    );
+}

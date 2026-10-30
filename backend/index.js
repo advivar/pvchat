@@ -75,6 +75,7 @@ async function initDb() {
                 id SERIAL PRIMARY KEY,
                 username VARCHAR(50) UNIQUE NOT NULL,
                 password_hash VARCHAR(255) NOT NULL,
+                public_key TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
@@ -190,6 +191,52 @@ app.get('/users/search', authMiddleware, async (req, res) => {
     } catch (err) {
         console.error('Erreur recherche users :', err);
         res.status(500).json({ error: 'Erreur serveur.' });
+    }
+});
+
+// ROUTE E2EE : Sauvegarder ma clé publique dans la BDD
+app.put('/users/me/public-key', authMiddleware, async (req, res) => {
+    const { public_key } = req.body;
+    const userId = req.user.userId;
+
+    if (!public_key) {
+        return res.status(400).json({ error: "Clé publique manquante." });
+    }
+
+    try {
+        await pool.query(
+            'UPDATE users SET public_key = $1 WHERE id = $2',
+            [public_key, userId]
+        );
+        res.json({ message: "Clé publique mise à jour avec succès" });
+    } catch (err) {
+        console.error('Erreur MAJ cle publique :', err);
+        res.status(500).json({ error: "Erreur serveur" });
+    }
+});
+
+// ROUTE E2EE : Récupérer la clé publique d'un destinataire
+app.get('/users/:id/public-key', authMiddleware, async (req, res) => {
+    const targetUserId = parseInt(req.params.id);
+
+    if (isNaN(targetUserId)) {
+        return res.status(400).json({ error: "ID utilisateur invalide." });
+    }
+
+    try {
+        const result = await pool.query(
+            'SELECT public_key FROM users WHERE id = $1',
+            [targetUserId]
+        );
+
+        if (result.rows.length === 0 || !result.rows[0].public_key) {
+            return res.status(404).json({ error: "Clé publique non trouvée" });
+        }
+
+        res.json({ public_key: result.rows[0].public_key });
+    } catch (err) {
+        console.error('Erreur recup cle publique :', err);
+        res.status(500).json({ error: "Erreur serveur" });
     }
 });
 

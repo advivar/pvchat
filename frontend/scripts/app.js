@@ -24,6 +24,27 @@ document.addEventListener("DOMContentLoaded", async () => {
         return;
     }
 
+    // --- INITIALISATION CRYPTO E2EE ---
+    let myPrivateKey = await getLocalPrivateKey();
+
+    if (!myPrivateKey) {
+        // 1. Générer la paire de clés si elle n'existe pas localement
+        const keyPair = await generateKeyPair();
+        
+        // 2. Sauvegarder la clé privée dans le navigateur (ne sort JAMAIS d'ici)
+        await storePrivateKey(keyPair.privateKey);
+        myPrivateKey = keyPair.privateKey;
+
+        // 3. Exporter et envoyer la clé publique au serveur backend
+        try {
+            const pubKeyString = await exportPublicKey(keyPair.publicKey);
+            await apiSavePublicKey(pubKeyString);
+        } catch (err) {
+            console.error("Erreur lors de l'envoi de la clé publique au serveur :", err);
+        }
+    }
+    // ----------------------------------
+
     renderProfileLoggedIn(currentUser);
     conversations = await apiGetConversations();
     renderConversationList(conversations, currentConversationId, openConversation);
@@ -36,7 +57,25 @@ document.addEventListener("DOMContentLoaded", async () => {
         hideWelcomeScreen();
 
         const conv = conversations.find(c => c.id === currentConversationId);
-        if (conv) updateChatHeader(conv.other_username);
+        if (conv) {
+            updateChatHeader(conv.other_username);
+
+            // --- CALCUL DE LA CLÉ PARTAGÉE (E2EE) ---
+            const targetUserId = conv.other_user_id || conv.other_id;
+            try {
+                // 1. Récupérer la clé publique du destinataire via l'API
+                const targetPubKeyPem = await apiGetUserPublicKey(targetUserId);
+                const targetPubKey = await importPublicKey(targetPubKeyPem);
+
+                // 2. Récupérer notre clé privée locale
+                const myPrivKey = await getLocalPrivateKey();
+
+                // 3. Dériver la clé partagée AES-GCM pour cette conversation
+                conv.sharedKey = await deriveSharedKey(myPrivKey, targetPubKey);
+            } catch (err) {
+                console.warn("Impossible de dériver la clé E2EE pour cette conversation :", err);
+            }
+        }
 
         setActiveSidebarConversation(currentConversationId);
 
@@ -44,17 +83,18 @@ document.addEventListener("DOMContentLoaded", async () => {
         document.getElementById("sendButton").disabled = false;
         document.getElementById("messageInput").placeholder = "Écrire un message...";
 
-        // 1. On récupère les messages chiffrés stockés en BDD
+        // Récupération et déchiffrer les messages
         const messages = await apiGetMessages(currentConversationId);
-
-        // 2. NOUVEAU : On parcourt chaque message et on le déchiffre avec la clé de la conversation
         if (conv && conv.sharedKey) {
             for (let msg of messages) {
-                msg.content = await decryptMessage(msg.content, conv.sharedKey);
+                try {
+                    msg.content = await decryptMessage(msg.content, conv.sharedKey);
+                } catch (e) {
+                    msg.content = "⚠️ [Message chiffré - Impossible de déchiffrer]";
+                }
             }
         }
 
-        // 3. On affiche les messages (qui sont maintenant déchiffrés en texte clair)
         renderMessages(messages, currentUser);
     }
 
@@ -66,63 +106,85 @@ document.addEventListener("DOMContentLoaded", async () => {
     // --- WEBSOCKET : message recu ---
 
     async function onNewMessage(msg) {
-    const conv = conversations.find(c => c.id === msg.conversation_id);
+        let conv = conversations.find(c => c.id === msg.conversation_id);
 
-    // Déchiffrement du contenu si une clé partagée existe
-    if (conv && conv.sharedKey) {
-        msg.content = await decryptMessage(msg.content, conv.sharedKey);
-    }
+        // Si la conversation n'est pas encore dans la liste, on la rafraîchit
+        if (!conv) {
+            await refreshConversations();
+            conv = conversations.find(c => c.id === msg.conversation_id);
+        }
 
-    if (currentConversationId && msg.conversation_id === currentConversationId) {
-        appendMessageToDOM(msg, currentUser);
-        scrollToBottom();
-    }
+        // Si la clé partagée n'est pas encore dérivée sur l'objet conversation, on la calcule
+        if (conv && !conv.sharedKey) {
+            const targetUserId = conv.other_user_id || conv.other_id;
+            try {
+                const targetPubKeyPem = await apiGetUserPublicKey(targetUserId);
+                const targetPubKey = await importPublicKey(targetPubKeyPem);
+                const myPrivKey = await getLocalPrivateKey();
+                conv.sharedKey = await deriveSharedKey(myPrivKey, targetPubKey);
+            } catch (err) {
+                console.warn("Erreur dérivation clé lors du WebSocket :", err);
+            }
+        }
 
-    if (conv) {
-        conv.last_message = msg.content;
-        renderConversationList(conversations, currentConversationId, openConversation);
-    } else {
-        refreshConversations();
-    }
+        // Déchiffrement du contenu
+        let decryptedText = msg.content;
+        if (conv && conv.sharedKey) {
+            try {
+                decryptedText = await decryptMessage(msg.content, conv.sharedKey);
+            } catch (e) {
+                decryptedText = "⚠️ [Message chiffré - Impossible de déchiffrer]";
+            }
+        }
+        msg.content = decryptedText;
+
+        // Mise à jour si la conversation est actuellement ouverte
+        if (currentConversationId && msg.conversation_id === currentConversationId) {
+            appendMessageToDOM(msg, currentUser);
+            scrollToBottom();
+        }
+
+        // Mise à jour de la liste latérale
+        if (conv) {
+            conv.last_message = decryptedText;
+            renderConversationList(conversations, currentConversationId, openConversation);
+        }
     }
 
     // --- ENVOI DE MESSAGE ---
 
     async function sendMessage() {
-    const input = document.getElementById("messageInput");
-    const text = input.value.trim();
-    if (!text || !currentConversationId) return;
+        const input = document.getElementById("messageInput");
+        const text = input.value.trim();
+        if (!text || !currentConversationId) return;
 
-    input.value = "";
+        input.value = "";
 
-    try {
-        // --- DEBUT CHIFFREMENT ---
-        // 1. Récupérer la conversation actuelle pour savoir qui est le destinataire
-        const conv = conversations.find(c => c.id === currentConversationId);
-        
-        // 2. Chiffrer le message avec la clé partagée
-        // (Remarque : `conv.sharedKey` aura été calculée à l'ouverture de la conversation)
-        let messageToSend = text;
-        if (conv && conv.sharedKey) {
-            messageToSend = await encryptMessage(text, conv.sharedKey);
+        try {
+            // --- DEBUT CHIFFREMENT ---
+            const conv = conversations.find(c => c.id === currentConversationId);
+            
+            let messageToSend = text;
+            if (conv && conv.sharedKey) {
+                messageToSend = await encryptMessage(text, conv.sharedKey);
+            }
+            // --- FIN CHIFFREMENT ---
+
+            const newMsg = await apiSendMessage(currentConversationId, messageToSend);
+            
+            // En local, on affiche directement le texte en clair qu'on vient d'envoyer
+            newMsg.content = text; 
+            appendMessageToDOM(newMsg, currentUser);
+            scrollToBottom();
+
+            if (conv) {
+                conv.last_message = text;
+                renderConversationList(conversations, currentConversationId, openConversation);
+            }
+        } catch (err) {
+            console.error("Erreur envoi :", err);
         }
-        // --- FIN CHIFFREMENT ---
-
-        const newMsg = await apiSendMessage(currentConversationId, messageToSend);
-        
-        // En local, on affiche directement le texte en clair qu'on vient d'envoyer
-        newMsg.content = text; 
-        appendMessageToDOM(newMsg, currentUser);
-        scrollToBottom();
-
-        if (conv) {
-            conv.last_message = text;
-            renderConversationList(conversations, currentConversationId, openConversation);
-        }
-    } catch (err) {
-        console.error("Erreur envoi :", err);
     }
-}
 
     document.getElementById("sendButton").addEventListener("click", sendMessage);
     document.getElementById("messageInput").addEventListener("keydown", (e) => {
