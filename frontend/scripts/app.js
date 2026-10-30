@@ -44,7 +44,17 @@ document.addEventListener("DOMContentLoaded", async () => {
         document.getElementById("sendButton").disabled = false;
         document.getElementById("messageInput").placeholder = "Écrire un message...";
 
+        // 1. On récupère les messages chiffrés stockés en BDD
         const messages = await apiGetMessages(currentConversationId);
+
+        // 2. NOUVEAU : On parcourt chaque message et on le déchiffre avec la clé de la conversation
+        if (conv && conv.sharedKey) {
+            for (let msg of messages) {
+                msg.content = await decryptMessage(msg.content, conv.sharedKey);
+            }
+        }
+
+        // 3. On affiche les messages (qui sont maintenant déchiffrés en texte clair)
         renderMessages(messages, currentUser);
     }
 
@@ -55,48 +65,64 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     // --- WEBSOCKET : message recu ---
 
-    function onNewMessage(msg) {
-        // Si on est dans cette conversation, on affiche le message
-        if (currentConversationId && msg.conversation_id === currentConversationId) {
-            appendMessageToDOM(msg, currentUser);
-            scrollToBottom();
-        }
+    async function onNewMessage(msg) {
+    const conv = conversations.find(c => c.id === msg.conversation_id);
 
-        // Met a jour le preview dans la liste
-        const conv = conversations.find(c => c.id === msg.conversation_id);
-        if (conv) {
-            conv.last_message = msg.content;
-            renderConversationList(conversations, currentConversationId, openConversation);
-        } else {
-            // On a recu un message d'une nouvelle conversation
-            refreshConversations();
-        }
+    // Déchiffrement du contenu si une clé partagée existe
+    if (conv && conv.sharedKey) {
+        msg.content = await decryptMessage(msg.content, conv.sharedKey);
+    }
+
+    if (currentConversationId && msg.conversation_id === currentConversationId) {
+        appendMessageToDOM(msg, currentUser);
+        scrollToBottom();
+    }
+
+    if (conv) {
+        conv.last_message = msg.content;
+        renderConversationList(conversations, currentConversationId, openConversation);
+    } else {
+        refreshConversations();
+    }
     }
 
     // --- ENVOI DE MESSAGE ---
 
     async function sendMessage() {
-        const input = document.getElementById("messageInput");
-        const text = input.value.trim();
-        if (!text || !currentConversationId) return;
+    const input = document.getElementById("messageInput");
+    const text = input.value.trim();
+    if (!text || !currentConversationId) return;
 
-        input.value = "";
+    input.value = "";
 
-        try {
-            const newMsg = await apiSendMessage(currentConversationId, text);
-            appendMessageToDOM(newMsg, currentUser);
-            scrollToBottom();
-
-            // Met a jour le preview
-            const conv = conversations.find(c => c.id === currentConversationId);
-            if (conv) {
-                conv.last_message = text;
-                renderConversationList(conversations, currentConversationId, openConversation);
-            }
-        } catch (err) {
-            console.error("Erreur envoi :", err);
+    try {
+        // --- DEBUT CHIFFREMENT ---
+        // 1. Récupérer la conversation actuelle pour savoir qui est le destinataire
+        const conv = conversations.find(c => c.id === currentConversationId);
+        
+        // 2. Chiffrer le message avec la clé partagée
+        // (Remarque : `conv.sharedKey` aura été calculée à l'ouverture de la conversation)
+        let messageToSend = text;
+        if (conv && conv.sharedKey) {
+            messageToSend = await encryptMessage(text, conv.sharedKey);
         }
+        // --- FIN CHIFFREMENT ---
+
+        const newMsg = await apiSendMessage(currentConversationId, messageToSend);
+        
+        // En local, on affiche directement le texte en clair qu'on vient d'envoyer
+        newMsg.content = text; 
+        appendMessageToDOM(newMsg, currentUser);
+        scrollToBottom();
+
+        if (conv) {
+            conv.last_message = text;
+            renderConversationList(conversations, currentConversationId, openConversation);
+        }
+    } catch (err) {
+        console.error("Erreur envoi :", err);
     }
+}
 
     document.getElementById("sendButton").addEventListener("click", sendMessage);
     document.getElementById("messageInput").addEventListener("keydown", (e) => {
