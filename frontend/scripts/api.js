@@ -63,3 +63,60 @@ async function apiSearchUsers(query) {
     if (!res.ok) throw new Error("Erreur serveur");
     return await res.json();
 }
+
+// Enregistrer la cle publique E2EE sur le serveur
+async function apiSavePublicKey(publicKey) {
+    const res = await fetch(`${API_BASE}/users/me/public-key`, {
+        method: "PUT",
+        headers: authHeaders(),
+        body: JSON.stringify({ public_key: publicKey })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Erreur sauvegarde cle publique");
+    return data;
+}
+
+// Recuperer la cle publique E2EE d'un autre utilisateur
+async function apiGetUserPublicKey(userId) {
+    const res = await fetch(`${API_BASE}/users/${userId}/public-key`, {
+        headers: authHeaders()
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Erreur recuperation cle publique");
+    return data.public_key;
+}
+
+// Supprimer (masquer) une conversation de son compte
+async function apiDeleteConversation(convId) {
+    const res = await fetch(`${API_BASE}/conversations/${convId}`, {
+        method: "DELETE",
+        headers: authHeaders()
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Erreur suppression conversation");
+    return data;
+}
+
+// Definir ou supprimer le mot de passe d'une conversation
+async function apiSetConversationPassword(convId, password) {
+    const res = await fetch(`${API_BASE}/conversations/${convId}/password`, {
+        method: "PUT",
+        headers: authHeaders(),
+        body: JSON.stringify({ password })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Erreur configuration mot de passe");
+    return data;
+}
+
+// Deverrouiller une conversation protegee par mot de passe
+async function apiUnlockConversation(convId, password) {
+    const res = await fetch(`${API_BASE}/conversations/${convId}/unlock`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ password })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Mot de passe incorrect");
+    return data;
+}
