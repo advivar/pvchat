@@ -19,7 +19,29 @@ function formatTime(isoString) {
     return new Date(isoString).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
 }
 
-function renderConversationList(conversations, currentConversationId, onClickCallback) {
+// Formate une date ISO en chaine lisible pour les separateurs de jour
+function formatDate(isoString) {
+    if (!isoString) return "";
+    const date = new Date(isoString);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    if (date.toDateString() === today.toDateString()) return "Aujourd'hui";
+    if (date.toDateString() === yesterday.toDateString()) return "Hier";
+
+    const options = { weekday: "long", day: "numeric", month: "long" };
+    if (date.getFullYear() !== today.getFullYear()) options.year = "numeric";
+    return date.toLocaleDateString("fr-FR", options);
+}
+
+// Extrait la date (sans heure) d'une chaine ISO pour comparaison
+function getDateKey(isoString) {
+    if (!isoString) return "";
+    return new Date(isoString).toDateString();
+}
+
+function renderConversationList(conversations, currentConversationId, onClickCallback, onSettingsCallback) {
     const list = document.getElementById("conversationList");
     list.innerHTML = "";
 
@@ -32,13 +54,20 @@ function renderConversationList(conversations, currentConversationId, onClickCal
     }
 
     conversations.forEach(conv => {
-        const btn = document.createElement("button");
-        btn.className = "conversation" + (conv.id === currentConversationId ? " active" : "");
-        btn.dataset.id = conv.id;
-        btn.dataset.name = conv.other_username;
+        const item = document.createElement("div");
+        item.className = "conversation" + (conv.id === currentConversationId ? " active" : "");
+        item.dataset.id = conv.id;
+        item.dataset.name = conv.other_username;
+        item.setAttribute("role", "button");
+        item.setAttribute("tabindex", "0");
 
         const color = getAvatarColor(conv.other_username);
-        const preview = conv.last_message || "Nouvelle discussion";
+
+        // Affiche un indicateur si la conversation est verrouillee
+        let preview = conv.last_message || "Nouvelle discussion";
+        if (conv.has_password) {
+            preview = "🔒 " + (conv.last_message || "Protégée par mot de passe");
+        }
 
         const avatarSpan = document.createElement("span");
         avatarSpan.className = `avatar ${color}`;
@@ -55,24 +84,36 @@ function renderConversationList(conversations, currentConversationId, onClickCal
 
         infoSpan.appendChild(strong);
         infoSpan.appendChild(small);
-        btn.appendChild(avatarSpan);
-        btn.appendChild(infoSpan);
+        item.appendChild(avatarSpan);
+        item.appendChild(infoSpan);
 
-        btn.addEventListener("click", () => onClickCallback(conv.id));
-        list.appendChild(btn);
+        // Bouton parametres au survol a droite
+        const settingsBtn = document.createElement("button");
+        settingsBtn.className = "conv-item-settings-btn";
+        settingsBtn.innerHTML = "⚙";
+        settingsBtn.title = `Paramètres de ${conv.other_username}`;
+        settingsBtn.setAttribute("type", "button");
+        settingsBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (onSettingsCallback) onSettingsCallback(conv.id);
+        });
+        item.appendChild(settingsBtn);
+
+        item.addEventListener("click", () => onClickCallback(conv.id));
+        item.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onClickCallback(conv.id);
+            }
+        });
+
+        list.appendChild(item);
     });
 }
 
 function renderMessages(messages, currentUser) {
     const zone = document.getElementById("messages");
     zone.innerHTML = "";
-
-    const sep = document.createElement("div");
-    sep.className = "date-separator";
-    const sepSpan = document.createElement("span");
-    sepSpan.textContent = "Discussion";
-    sep.appendChild(sepSpan);
-    zone.appendChild(sep);
 
     if (messages.length === 0) {
         const empty = document.createElement("p");
@@ -82,6 +123,7 @@ function renderMessages(messages, currentUser) {
         return;
     }
 
+    // Affiche les messages avec separateurs de jour automatiques
     messages.forEach(msg => appendMessageToDOM(msg, currentUser));
     scrollToBottom();
 }
@@ -96,11 +138,27 @@ function appendMessageToDOM(msg, currentUser) {
     const empty = zone.querySelector(".empty-chat");
     if (empty) empty.remove();
 
+    // Separateur de jour si la date change par rapport au dernier message affiche
+    const newDateKey = getDateKey(msg.created_at);
+    const allMessages = zone.querySelectorAll(".message");
+    const lastMessage = allMessages.length > 0 ? allMessages[allMessages.length - 1] : null;
+    const lastDateKey = lastMessage ? lastMessage.dataset.date : null;
+
+    if (newDateKey && newDateKey !== lastDateKey) {
+        const sep = document.createElement("div");
+        sep.className = "date-separator";
+        const sepSpan = document.createElement("span");
+        sepSpan.textContent = formatDate(msg.created_at);
+        sep.appendChild(sepSpan);
+        zone.appendChild(sep);
+    }
+
     const isMe = currentUser && (msg.sender_id === currentUser.id || msg.sender_id === currentUser.userId);
 
     const div = document.createElement("div");
     div.className = `message ${isMe ? "sent" : "received"}`;
     div.dataset.msgId = msg.id;
+    div.dataset.date = newDateKey;
 
     if (!isMe) {
         const color = getAvatarColor(msg.sender_name || "?");
@@ -155,7 +213,23 @@ function updateChatHeader(username) {
     headerAvatar.className = `avatar ${color}`;
     headerAvatar.textContent = getInitials(username);
     document.getElementById("chatTitle").textContent = username;
-    document.getElementById("chatStatus").textContent = "Discussion privée";
+
+    const statusBtn = document.getElementById("chatStatusBtn");
+    const placeholder = document.getElementById("chatStatusPlaceholder");
+    if (statusBtn) statusBtn.style.display = "inline-flex";
+    if (placeholder) placeholder.style.display = "none";
+}
+
+function resetChatHeader() {
+    const headerAvatar = document.getElementById("headerAvatar");
+    headerAvatar.className = "avatar purple";
+    headerAvatar.textContent = "--";
+    document.getElementById("chatTitle").textContent = "Sélectionnez une discussion";
+
+    const statusBtn = document.getElementById("chatStatusBtn");
+    const placeholder = document.getElementById("chatStatusPlaceholder");
+    if (statusBtn) statusBtn.style.display = "none";
+    if (placeholder) placeholder.style.display = "";
 }
 
 function setActiveSidebarConversation(convId) {

@@ -1,6 +1,6 @@
-// frontend/scripts/crypto.js
+// Fonctions de chiffrement E2EE (ECDH P-256 + AES-GCM-256)
 
-// 1. Générer une paire de clés ECDH pour l'utilisateur
+// Generer une paire de cles ECDH pour l'utilisateur
 async function generateKeyPair() {
     return await window.crypto.subtle.generateKey(
         { name: "ECDH", namedCurve: "P-256" },
@@ -9,15 +9,15 @@ async function generateKeyPair() {
     );
 }
 
-// 2. Exporter la clé publique en chaîne de caractères Base64 (pour l'envoyer au serveur)
+// Exporter la cle publique en Base64 (pour l'envoyer au serveur)
 async function exportPublicKey(key) {
     const exported = await window.crypto.subtle.exportKey("spki", key);
     return btoa(String.fromCharCode(...new Uint8Array(exported)));
 }
 
-// 3. Importer la clé publique d'un destinataire reçue du serveur (depuis Base64)
-async function importPublicKey(pemKey) {
-    const binaryDer = Uint8Array.from(atob(pemKey), c => c.charCodeAt(0));
+// Importer la cle publique d'un destinataire recue du serveur (depuis Base64)
+async function importPublicKey(base64Key) {
+    const binaryDer = Uint8Array.from(atob(base64Key), c => c.charCodeAt(0));
     return await window.crypto.subtle.importKey(
         "spki",
         binaryDer,
@@ -27,7 +27,7 @@ async function importPublicKey(pemKey) {
     );
 }
 
-// 4. Dériver une clé symétrique partagée (AES-GCM) entre ma clé privée et la clé publique du destinataire
+// Deriver une cle symetrique partagee (AES-GCM-256) a partir des cles ECDH
 async function deriveSharedKey(privateKey, publicKey) {
     return await window.crypto.subtle.deriveKey(
         { name: "ECDH", public: publicKey },
@@ -38,11 +38,11 @@ async function deriveSharedKey(privateKey, publicKey) {
     );
 }
 
-// 5. Chiffrer un texte avec la clé partagée
+// Chiffrer un texte avec la cle partagee (AES-GCM)
 async function encryptMessage(text, sharedKey) {
     const encoder = new TextEncoder();
     const data = encoder.encode(text);
-    const iv = window.crypto.getRandomValues(new Uint8Array(12)); // IV unique par message
+    const iv = window.crypto.getRandomValues(new Uint8Array(12));
 
     const ciphertextBuffer = await window.crypto.subtle.encrypt(
         { name: "AES-GCM", iv: iv },
@@ -56,7 +56,7 @@ async function encryptMessage(text, sharedKey) {
     });
 }
 
-// 6. Déchiffrer un message reçu
+// Dechiffrer un message recu avec la cle partagee
 async function decryptMessage(encryptedJsonString, sharedKey) {
     try {
         const { ciphertext, iv } = JSON.parse(encryptedJsonString);
@@ -72,22 +72,22 @@ async function decryptMessage(encryptedJsonString, sharedKey) {
         const decoder = new TextDecoder();
         return decoder.decode(decryptedBuffer);
     } catch (e) {
-        console.error("Échec du déchiffrement :", e);
+        console.error("Echec du dechiffrement :", e);
         return "⚠️ [Message chiffré - Impossible de déchiffrer]";
     }
 }
 
-// Sauvegarder la clé privée localement dans le navigateur
+// Sauvegarder la cle privee localement dans le navigateur (ne sort jamais du client)
 async function storePrivateKey(privateKey) {
     const exported = await window.crypto.subtle.exportKey("pkcs8", privateKey);
     localStorage.setItem("pvchat_private_key", btoa(String.fromCharCode(...new Uint8Array(exported))));
 }
 
-// Charger la clé privée locale
+// Charger la cle privee locale depuis le navigateur
 async function getLocalPrivateKey() {
-    const pem = localStorage.getItem("pvchat_private_key");
-    if (!pem) return null;
-    const binaryDer = Uint8Array.from(atob(pem), c => c.charCodeAt(0));
+    const stored = localStorage.getItem("pvchat_private_key");
+    if (!stored) return null;
+    const binaryDer = Uint8Array.from(atob(stored), c => c.charCodeAt(0));
     return await window.crypto.subtle.importKey(
         "pkcs8",
         binaryDer,

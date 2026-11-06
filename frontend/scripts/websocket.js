@@ -53,3 +53,13 @@ function closeWebSocket() {
         socket = null;
     }
 }
+
+// Renvoie l'etat lisible de la connexion WebSocket
+function getWebSocketStatus() {
+    if (!socket) return "Déconnecté 🔴";
+    switch (socket.readyState) {
+        case WebSocket.OPEN: return "Connecté en temps réel 🟢";
+        case WebSocket.CONNECTING: return "Connexion en cours 🟡";
+        default: return "Déconnecté 🔴";
+    }
+}

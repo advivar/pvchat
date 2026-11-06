@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     username VARCHAR(50) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
-    public_key TEXT, -- <--- NOUVELLE COLONNE POUR LE CHIFFREMENT E2EE
+    public_key TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -25,10 +25,20 @@ CREATE TABLE IF NOT EXISTS messages (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Parametres utilisateur par conversation (suppression, mot de passe)
+CREATE TABLE IF NOT EXISTS conversation_settings (
+    id SERIAL PRIMARY KEY,
+    conversation_id INT REFERENCES conversations(id) ON DELETE CASCADE,
+    user_id INT REFERENCES users(id) ON DELETE CASCADE,
+    is_hidden BOOLEAN DEFAULT FALSE,
+    password_hash VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT unique_conv_user_setting UNIQUE (conversation_id, user_id)
+);
+
 -- Table des salons (pour plus tard si on fait des groupes)
 CREATE TABLE IF NOT EXISTS rooms (
     id SERIAL PRIMARY KEY,
     name VARCHAR(100) UNIQUE NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
