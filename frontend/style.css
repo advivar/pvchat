@@ -257,10 +257,21 @@ button {
     font-size: 20px;
 }
 
+.chat-content-area {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    position: relative;
+    overflow: hidden;
+}
+
 .messages {
     display: flex;
     flex-direction: column;
     flex: 1;
+    min-height: 0;
     gap: 20px;
     padding: 25px;
     overflow-y: auto;
@@ -1078,4 +1089,388 @@ button {
     background: rgba(245, 158, 11, 0.15);
     border: 1px solid rgba(245, 158, 11, 0.35);
     color: #fde68a;
+}
+
+/* ==========================================================================
+   ECRAN DE DEVERROUILLAGE INLINE (remplace les bulles de messages)
+   ========================================================================== */
+
+.chat-unlock-screen {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    min-height: 380px;
+    padding: 24px;
+    background: radial-gradient(circle at center, rgba(139, 92, 246, 0.08) 0%, transparent 70%);
+}
+
+.unlock-panel-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    max-width: 440px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px 28px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+    text-align: center;
+    animation: fadeIn 0.25s ease-out;
+}
+
+.unlock-panel-icon {
+    font-size: 46px;
+    margin-bottom: 14px;
+    filter: drop-shadow(0 4px 12px rgba(139, 92, 246, 0.35));
+}
+
+.unlock-panel-card h3 {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 8px;
+}
+
+.unlock-panel-desc {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--muted);
+    margin-bottom: 22px;
+}
+
+.unlock-form-box {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.unlock-input-container {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+}
+
+.unlock-input-container input {
+    width: 100%;
+    padding-right: 42px;
+    font-size: 14px;
+}
+
+.unlock-pwd-toggle {
+    position: absolute;
+    right: 10px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    opacity: 0.65;
+    transition: opacity 0.2s;
+    padding: 4px;
+}
+
+.unlock-pwd-toggle:hover {
+    opacity: 1;
+}
+
+.unlock-panel-error {
+    font-size: 13px;
+    color: #f87171;
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    border-radius: 8px;
+    padding: 8px 12px;
+    text-align: left;
+    margin: 0;
+}
+
+.unlock-panel-btn {
+    width: 100%;
+    margin-top: 4px;
+    padding: 12px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+/* ==========================================================================
+   MODALE D'ETAT CRYPTOGRAPHIQUE & GESTION DES CLES
+   ========================================================================== */
+
+.modal-card-large {
+    max-width: 680px;
+    width: 92%;
+    max-height: 88vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-subtitle {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 3px;
+}
+
+.modal-body-scrollable {
+    overflow-y: auto;
+    padding-right: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.modal-body-scrollable::-webkit-scrollbar {
+    width: 6px;
+}
+
+.modal-body-scrollable::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 3px;
+}
+
+.crypto-section {
+    display: flex;
+    flex-direction: column;
+    background: var(--sidebar);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    gap: 12px;
+}
+
+.crypto-section-header-flex {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.crypto-section-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.crypto-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 10px;
+}
+
+.crypto-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.crypto-card-label {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+.crypto-card-value {
+    font-size: 13px;
+    color: var(--text);
+    font-family: Consolas, monospace;
+    word-break: break-all;
+}
+
+.crypto-notice-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 14px;
+    background: rgba(16, 185, 129, 0.08);
+    border: 1px solid rgba(16, 185, 129, 0.25);
+    border-radius: 8px;
+    font-size: 12px;
+    color: #a7f3d0;
+    line-height: 1.45;
+}
+
+.crypto-notice-icon {
+    font-size: 18px;
+    flex-shrink: 0;
+}
+
+.crypto-notice-banner strong {
+    display: block;
+    color: #6ee7b7;
+    margin-bottom: 2px;
+}
+
+.crypto-notice-banner p {
+    margin: 0;
+    color: #d1fae5;
+}
+
+/* Zone d'authentification pour affichage des cles */
+.keys-auth-box {
+    background: var(--panel);
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.keys-auth-desc {
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.4;
+    margin: 0;
+}
+
+.keys-auth-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.keys-auth-row input {
+    flex: 1;
+}
+
+.keys-auth-error {
+    font-size: 12px;
+    color: #f87171;
+    margin: 0;
+}
+
+.btn-sm {
+    padding: 6px 12px;
+    font-size: 12px;
+    border-radius: 6px;
+}
+
+/* Zone d'affichage des cles inspectees */
+.keys-display-area {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    animation: fadeIn 0.2s ease-out;
+}
+
+.key-item {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.key-item-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.key-item-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.key-item-sub {
+    font-size: 11px;
+    color: var(--muted);
+    margin: 0;
+}
+
+.key-badge-danger {
+    font-size: 11px;
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.35);
+    color: #fca5a5;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.key-code-block {
+    background: #090b12;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-family: Consolas, 'Fira Code', monospace;
+    font-size: 11px;
+    line-height: 1.4;
+    color: #93c5fd;
+    word-break: break-all;
+    white-space: pre-wrap;
+    max-height: 100px;
+    overflow-y: auto;
+    margin: 4px 0 0;
+}
+
+.key-code-private {
+    color: #fca5a5;
+    background: #11090d;
+    border-color: rgba(239, 68, 68, 0.25);
+}
+
+.copy-key-btn {
+    background: var(--hover);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 4px 9px;
+    font-size: 11px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.copy-key-btn:hover {
+    background: var(--purple);
+    border-color: var(--purple);
+    color: #fff;
+}
+
+.copy-key-btn.btn-copied {
+    background: #10b981;
+    border-color: #10b981;
+    color: #fff;
+}
+
+.lock-conv-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(139, 92, 246, 0.15);
+    border: 1px solid rgba(139, 92, 246, 0.4);
+    color: #c4b5fd;
+    padding: 7px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.lock-conv-button:hover {
+    background: rgba(139, 92, 246, 0.3);
+    border-color: #8b5cf6;
+    color: #fff;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
 }

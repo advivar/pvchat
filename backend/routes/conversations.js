@@ -63,10 +63,12 @@ router.post('/', authMiddleware, async (req, res) => {
         const existing = await pool.query(
             `SELECT c.id,
                     CASE WHEN c.user1_id = $1 THEN u2.id ELSE u1.id END AS other_user_id,
-                    CASE WHEN c.user1_id = $1 THEN u2.username ELSE u1.username END AS other_username
+                    CASE WHEN c.user1_id = $1 THEN u2.username ELSE u1.username END AS other_username,
+                    CASE WHEN cs.password_hash IS NOT NULL THEN TRUE ELSE FALSE END AS has_password
              FROM conversations c
              JOIN users u1 ON c.user1_id = u1.id
              JOIN users u2 ON c.user2_id = u2.id
+             LEFT JOIN conversation_settings cs ON cs.conversation_id = c.id AND cs.user_id = $1
              WHERE c.user1_id = $2 AND c.user2_id = $3`,
             [currentUserId, u1, u2]
         );
@@ -100,7 +102,8 @@ router.post('/', authMiddleware, async (req, res) => {
                 id: newId,
                 other_user_id: target.rows[0].id,
                 other_username: target.rows[0].username,
-                last_message: null
+                last_message: null,
+                has_password: false
             },
             alreadyExists: false
         });
@@ -142,11 +145,11 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     }
 });
 
-// Definir ou supprimer le mot de passe d'une conversation
-router.put('/:id/password', authMiddleware, async (req, res) => {
+// Definir, modifier ou supprimer le mot de passe d'une conversation (limite a 10 requetes/min)
+router.put('/:id/password', authMiddleware, rateLimiter(60000, 10), async (req, res) => {
     const convId = parseInt(req.params.id);
     const userId = req.user.userId;
-    const { password } = req.body;
+    const { password, currentPassword } = req.body;
 
     if (isNaN(convId)) {
         return res.status(400).json({ error: 'ID de conversation invalide.' });
@@ -154,11 +157,29 @@ router.put('/:id/password', authMiddleware, async (req, res) => {
 
     try {
         const check = await pool.query(
-            'SELECT id FROM conversations WHERE id = $1 AND (user1_id = $2 OR user2_id = $2)',
+            'SELECT id, user1_id, user2_id FROM conversations WHERE id = $1 AND (user1_id = $2 OR user2_id = $2)',
             [convId, userId]
         );
         if (check.rows.length === 0) {
             return res.status(403).json({ error: 'Acces refuse.' });
+        }
+
+        // Verifie les parametres personnels de cet utilisateur pour cette conversation
+        const settingsRes = await pool.query(
+            'SELECT password_hash FROM conversation_settings WHERE conversation_id = $1 AND user_id = $2',
+            [convId, userId]
+        );
+        const existingHash = settingsRes.rows.length > 0 ? settingsRes.rows[0].password_hash : null;
+
+        // Si la discussion est deja protegee, verification obligatoire du mot de passe actuel
+        if (existingHash) {
+            if (!currentPassword || typeof currentPassword !== 'string' || !currentPassword.trim()) {
+                return res.status(400).json({ error: 'Le mot de passe actuel de la discussion est requis pour modifier ou supprimer la protection.' });
+            }
+            const valid = await bcrypt.compare(currentPassword.trim(), existingHash);
+            if (!valid) {
+                return res.status(401).json({ error: 'Mot de passe actuel incorrect.' });
+            }
         }
 
         let hash = null;
@@ -169,6 +190,7 @@ router.put('/:id/password', authMiddleware, async (req, res) => {
             hash = await bcrypt.hash(password, 10);
         }
 
+        // Met a jour le mot de passe UNIQUEMENT dans conversation_settings pour cet utilisateur
         await pool.query(
             `INSERT INTO conversation_settings (conversation_id, user_id, password_hash)
              VALUES ($1, $2, $3)
@@ -176,7 +198,14 @@ router.put('/:id/password', authMiddleware, async (req, res) => {
             [convId, userId, hash]
         );
 
-        const message = hash ? 'Mot de passe defini avec succes.' : 'Mot de passe supprime avec succes.';
+        // Diffuse uniquement aux sessions de l'utilisateur courant (pas a l'autre utilisateur !)
+        broadcastToConversation([userId], {
+            type: 'conversation_password_changed',
+            conversation_id: convId,
+            has_password: !!hash
+        });
+
+        const message = hash ? 'Mot de passe defini avec succes.' : 'Protection par mot de passe supprimee avec succes.';
         res.json({ message, hasPassword: !!hash });
     } catch (err) {
         console.error('Erreur mot de passe conversation :', err);
@@ -184,8 +213,8 @@ router.put('/:id/password', authMiddleware, async (req, res) => {
     }
 });
 
-// Deverrouiller une conversation protegee par mot de passe
-router.post('/:id/unlock', authMiddleware, async (req, res) => {
+// Deverrouiller une conversation protegee par mot de passe (limite a 30 requetes/min anti brute-force)
+router.post('/:id/unlock', authMiddleware, rateLimiter(60000, 30), async (req, res) => {
     const convId = parseInt(req.params.id);
     const userId = req.user.userId;
     const { password } = req.body;
@@ -199,16 +228,26 @@ router.post('/:id/unlock', authMiddleware, async (req, res) => {
     }
 
     try {
-        const result = await pool.query(
-            'SELECT password_hash FROM conversation_settings WHERE conversation_id = $1 AND user_id = $2',
+        const check = await pool.query(
+            'SELECT id FROM conversations WHERE id = $1 AND (user1_id = $2 OR user2_id = $2)',
             [convId, userId]
         );
 
-        if (result.rows.length === 0 || !result.rows[0].password_hash) {
+        if (check.rows.length === 0) {
+            return res.status(403).json({ error: 'Acces refuse.' });
+        }
+
+        const settingsRes = await pool.query(
+            'SELECT password_hash FROM conversation_settings WHERE conversation_id = $1 AND user_id = $2',
+            [convId, userId]
+        );
+        const hash = settingsRes.rows.length > 0 ? settingsRes.rows[0].password_hash : null;
+
+        if (!hash) {
             return res.json({ unlocked: true });
         }
 
-        const valid = await bcrypt.compare(password, result.rows[0].password_hash);
+        const valid = await bcrypt.compare(password, hash);
         if (!valid) {
             return res.status(401).json({ error: 'Mot de passe incorrect.' });
         }
@@ -220,7 +259,7 @@ router.post('/:id/unlock', authMiddleware, async (req, res) => {
     }
 });
 
-// Messages d'une conversation (verifie l'appartenance et le verrouillage par mot de passe)
+// Messages d'une conversation (verifie l'appartenance des participants)
 router.get('/:id/messages', authMiddleware, async (req, res) => {
     const convId = parseInt(req.params.id);
     const userId = req.user.userId;
@@ -236,23 +275,6 @@ router.get('/:id/messages', authMiddleware, async (req, res) => {
         );
         if (check.rows.length === 0) {
             return res.status(403).json({ error: 'Acces refuse a cette conversation.' });
-        }
-
-        // Verifie si la conversation est protegee par mot de passe cote utilisateur
-        const setting = await pool.query(
-            'SELECT password_hash FROM conversation_settings WHERE conversation_id = $1 AND user_id = $2',
-            [convId, userId]
-        );
-
-        if (setting.rows.length > 0 && setting.rows[0].password_hash) {
-            const unlockHeader = req.headers['x-conversation-password'];
-            if (!unlockHeader) {
-                return res.status(423).json({ error: 'Conversation verrouillee par un mot de passe.', locked: true });
-            }
-            const valid = await bcrypt.compare(unlockHeader, setting.rows[0].password_hash);
-            if (!valid) {
-                return res.status(423).json({ error: 'Mot de passe de conversation incorrect.', locked: true });
-            }
         }
 
         const msgs = await pool.query(

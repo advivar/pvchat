@@ -78,6 +78,9 @@
             if (response.ok) {
                 localStorage.setItem('pvchat_token', data.token);
                 localStorage.setItem('pvchat_username', data.user.username);
+                if (data.user && (data.user.id || data.user.userId)) {
+                    localStorage.setItem('pvchat_user_id', data.user.id || data.user.userId);
+                }
                 showMessage("Connexion réussie ! Redirection...", false);
                 setTimeout(() => window.location.href = "index.html", 800);
             } else {

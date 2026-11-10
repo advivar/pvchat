@@ -21,7 +21,23 @@ app.disable('x-powered-by');
 app.set('trust proxy', 1);
 
 app.use(express.json({ limit: '1mb' }));
-app.use(cors());
+
+// Configuration CORS securisee
+const allowedOrigins = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map(s => s.trim())
+    : ['http://localhost:9080', 'http://127.0.0.1:9080'];
+
+app.use(cors({
+    origin: (origin, callback) => {
+        // Autoriser les requetes sans origin (reverse-proxy Nginx local, curl, tests)
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Non autorise par la politique CORS'));
+        }
+    },
+    credentials: true
+}));
 
 // Montage des routes modulaires
 app.use('/', authRoutes);

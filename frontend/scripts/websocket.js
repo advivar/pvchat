@@ -1,18 +1,24 @@
 // WebSocket : connexion temps reel et reception des messages
 
 let socket = null;
+let _wsCallbacks = { onNewMessage: null, onWsEvent: null };
 
-function initWebSocket(currentUser, conversations, onNewMessage) {
+function initWebSocket(currentUser, conversations, onNewMessage, onWsEvent) {
     const token = localStorage.getItem("pvchat_token");
     if (!token) return;
 
-    // Ferme l'ancienne connexion si elle existait
-    if (socket) {
-        try { socket.close(); } catch (e) {}
+    // Mise a jour des callbacks (utile lors de la reconnexion)
+    _wsCallbacks.onNewMessage = onNewMessage;
+    _wsCallbacks.onWsEvent = onWsEvent;
+
+    // Ferme l'ancienne connexion proprement
+    if (socket && socket.readyState !== WebSocket.CLOSED) {
+        try { socket.close(); } catch {}
     }
 
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    // Authentification via token dans la query string
+    // Note : le token est passe en query string car les WebSockets ne supportent pas les headers HTTP custom.
+    // Cette limitation est inherente au protocole WebSocket (RFC 6455).
     const wsUrl = `${protocol}//${window.location.host}/ws?token=${encodeURIComponent(token)}`;
 
     socket = new WebSocket(wsUrl);
@@ -20,31 +26,31 @@ function initWebSocket(currentUser, conversations, onNewMessage) {
     socket.onmessage = (event) => {
         try {
             const data = JSON.parse(event.data);
-            if (data.type === "new_message") {
-                onNewMessage(data.message);
+            if (data.type === "new_message" && _wsCallbacks.onNewMessage) {
+                _wsCallbacks.onNewMessage(data.message);
+            } else if (_wsCallbacks.onWsEvent) {
+                _wsCallbacks.onWsEvent(data);
             }
         } catch (e) {
-            console.error("WS message invalide", e);
+            console.error("WS message invalide :", e);
         }
     };
 
     socket.onclose = (event) => {
-        // Si le token est refuse par le serveur, on deconnecte
+        // Token refuse par le serveur -> deconnexion immediate
         if (event.code === 4001 || event.code === 4002) {
             localStorage.removeItem("pvchat_token");
             window.location.reload();
             return;
         }
 
-        // Sinon reconnexion auto apres 3s si toujours connecte
+        // Reconnexion automatique si toujours authentifie (backoff 3s)
         if (localStorage.getItem("pvchat_token")) {
-            setTimeout(() => initWebSocket(currentUser, conversations, onNewMessage), 3000);
+            setTimeout(() => initWebSocket(currentUser, conversations, _wsCallbacks.onNewMessage, _wsCallbacks.onWsEvent), 3000);
         }
     };
 
-    socket.onerror = () => {
-        // En cas d'erreur reseau
-    };
+    socket.onerror = () => {};
 }
 
 function closeWebSocket() {
@@ -54,7 +60,6 @@ function closeWebSocket() {
     }
 }
 
-// Renvoie l'etat lisible de la connexion WebSocket
 function getWebSocketStatus() {
     if (!socket) return "Déconnecté 🔴";
     switch (socket.readyState) {

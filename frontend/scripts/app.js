@@ -1,20 +1,24 @@
-// Point d'entree principal : init, modales, envoi de messages et chiffrement
+// Point d'entree principal : init, messagerie, chiffrement E2EE et parametres
 
 document.addEventListener("DOMContentLoaded", async () => {
 
     const token = localStorage.getItem("pvchat_token");
 
-    // Variables d'etat globales
+    // --- ETAT GLOBAL ---
     let currentUser = null;
     let conversations = [];
     let currentConversationId = null;
     let searchTimeout = null;
     let settingsTargetConvId = null;
 
-    // Mots de passe de session pour les conversations deverrouillees
-    const unlockedPasswords = new Map();
-    // Cle de chiffrement derivee du mot de passe pour chaque conversation (double chiffrement)
-    const passwordDerivedKeys = new Map();
+    // Cles cryptographiques ECDH de l'utilisateur courant
+    let myPrivateKey = null;
+    let myPublicKeyBase64 = null;
+
+    // ID de la conversation actuellement deverrouillee en local dans cette session de consultation
+    // Des qu'on change de conversation ou qu'on clique sur Verrouiller, ce verrou retombe.
+    let unlockedConversationId = null;
+    let unlockedConversationPassword = null;
 
     // --- INIT ---
 
@@ -29,42 +33,124 @@ document.addEventListener("DOMContentLoaded", async () => {
         renderProfileLoggedOut();
         return;
     }
+    // Normalisation de l'ID utilisateur
+    currentUser.id = currentUser.id || currentUser.userId;
+    currentUser.userId = currentUser.id;
 
     // --- INITIALISATION CRYPTO E2EE ---
-    let myPrivateKey = await getLocalPrivateKey();
+    const myUserId = currentUser.id;
+    myPrivateKey = await getLocalPrivateKey(myUserId);
 
-    if (!myPrivateKey) {
-        // Generer la paire de cles si elle n'existe pas localement
+    let remotePubKey = null;
+    try {
+        remotePubKey = await apiGetUserPublicKey(myUserId);
+    } catch (e) {
+        console.warn("Cle publique distante absente ou erreur :", e);
+    }
+
+    // Verifier la coherence de la paire de cles
+    const isKeyCoherent = await verifyKeyPair(myPrivateKey, remotePubKey);
+
+    if (!myPrivateKey || !remotePubKey || !isKeyCoherent) {
+        console.log("Generation d'une nouvelle paire de cles ECDH propre...");
         const keyPair = await generateKeyPair();
-
-        // Sauvegarder la cle privee dans le navigateur (ne sort jamais du client)
-        await storePrivateKey(keyPair.privateKey);
+        await storePrivateKey(keyPair.privateKey, myUserId);
         myPrivateKey = keyPair.privateKey;
-
-        // Exporter et envoyer la cle publique au serveur
         try {
-            const pubKeyString = await exportPublicKey(keyPair.publicKey);
-            await apiSavePublicKey(pubKeyString);
+            myPublicKeyBase64 = await exportPublicKey(keyPair.publicKey);
+            await apiSavePublicKey(myPublicKeyBase64);
         } catch (err) {
-            console.error("Erreur lors de l'envoi de la cle publique au serveur :", err);
+            console.error("Erreur envoi cle publique :", err);
         }
+    } else {
+        myPublicKeyBase64 = remotePubKey;
     }
 
     renderProfileLoggedIn(currentUser);
     conversations = await apiGetConversations();
+    _syncUnlockedState();
     renderConversationList(conversations, currentConversationId, openConversation, openConversationSettings);
-    initWebSocket(currentUser, conversations, onNewMessage);
+    updateConversationPreviews();
 
-    // --- CONVERSATIONS ---
+    // Connexion WebSocket temps reel
+    initWebSocket(currentUser, conversations, onNewMessage, onWsEvent);
 
+    // --- HELPERS ---
+
+    function _syncUnlockedState() {
+        conversations.forEach(c => {
+            c.unlocked = Boolean(c.id === unlockedConversationId);
+        });
+    }
+
+    function updateLockBtnVisibility(conv) {
+        const lockBtn = document.getElementById("lockConvBtn");
+        if (!lockBtn) return;
+        if (conv && conv.has_password && unlockedConversationId === conv.id) {
+            lockBtn.style.display = "inline-flex";
+        } else {
+            lockBtn.style.display = "none";
+        }
+    }
+
+    // --- WEBSOCKET EVENTS ---
+
+    function onWsEvent(data) {
+        if (data.type === "conversation_password_changed") {
+            const conv = conversations.find(c => c.id === data.conversation_id);
+            if (!conv) return;
+
+            conv.has_password = data.has_password;
+
+            if (!data.has_password) {
+                // Mot de passe supprime
+                conv.unlocked = true;
+                if (currentConversationId === conv.id) {
+                    unlockedConversationId = conv.id;
+                    updateLockBtnVisibility(conv);
+                    hideInlineUnlockScreen();
+                    const messagesZone = document.getElementById("messages");
+                    if (messagesZone) messagesZone.style.display = "flex";
+                    document.getElementById("messageInput").disabled = false;
+                    document.getElementById("sendButton").disabled = false;
+                    document.getElementById("messageInput").placeholder = "Écrire un message...";
+                    loadAndDisplayMessages(conv);
+                }
+            } else {
+                // Mot de passe applique ou change
+                if (unlockedConversationId === conv.id) {
+                    unlockedConversationId = null;
+                }
+                conv.unlocked = false;
+                if (currentConversationId === conv.id) {
+                    updateLockBtnVisibility(conv);
+                    showInlineUnlockScreen(conv);
+                }
+            }
+            renderConversationList(conversations, currentConversationId, openConversation, openConversationSettings);
+        }
+    }
+
+    // --- CLE E2EE PARTAGEE ---
+
+    // Derive (ou reutilise) la sharedKey ECDH pour une conversation
     async function ensureSharedKey(conv) {
-        if (conv.sharedKey) return conv.sharedKey;
         const targetUserId = conv.other_user_id || conv.other_id;
+        if (!targetUserId) return null;
         try {
             const targetPubKeyPem = await apiGetUserPublicKey(targetUserId);
-            const targetPubKey = await importPublicKey(targetPubKeyPem);
-            const myPrivKey = await getLocalPrivateKey();
-            conv.sharedKey = await deriveSharedKey(myPrivKey, targetPubKey);
+            // Recalculer si la cle du contact a change ou si absente
+            if (!conv.sharedKey || conv._targetPubKeyPem !== targetPubKeyPem) {
+                conv._targetPubKeyPem = targetPubKeyPem;
+                const targetPubKey = await importPublicKey(targetPubKeyPem);
+                const currentId = currentUser.id || currentUser.userId;
+                const myPrivKey = myPrivateKey || (await getLocalPrivateKey(currentId));
+                if (!myPrivKey) {
+                    console.warn("Cle privee locale absente pour userId", currentId);
+                    return null;
+                }
+                conv.sharedKey = await deriveSharedKey(myPrivKey, targetPubKey);
+            }
             return conv.sharedKey;
         } catch (err) {
             console.warn("Impossible de deriver la cle E2EE :", err);
@@ -72,106 +158,256 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
     }
 
-    // Derive une cle AES-GCM a partir d'un mot de passe (PBKDF2) pour le chiffrement local du mot de passe
-    async function deriveKeyFromPassword(password, saltString) {
-        const enc = new TextEncoder();
-        const baseKey = await window.crypto.subtle.importKey(
-            "raw",
-            enc.encode(password),
-            { name: "PBKDF2" },
-            false,
-            ["deriveKey"]
-        );
-        return await window.crypto.subtle.deriveKey(
-            {
-                name: "PBKDF2",
-                salt: enc.encode(saltString || "pvchat_salt_fixed"),
-                iterations: 100000,
-                hash: "SHA-256"
-            },
-            baseKey,
-            { name: "AES-GCM", length: 256 },
-            false,
-            ["encrypt", "decrypt"]
-        );
+    // Dechiffre les apercus de la liste des conversations (uniquement si autorise)
+    async function updateConversationPreviews() {
+        let updated = false;
+        for (const conv of conversations) {
+            if (conv.has_password && unlockedConversationId !== conv.id) continue;
+            if (!conv.last_message || !isEncryptedPayload(conv.last_message)) continue;
+            try {
+                await ensureSharedKey(conv);
+                const text = await decryptConversationMessage(conv.last_message, conv.sharedKey);
+                if (!isEncryptedPayload(text) && !text.startsWith("⚠️")) {
+                    conv.last_message = text;
+                    updated = true;
+                }
+            } catch {}
+        }
+        if (updated) {
+            renderConversationList(conversations, currentConversationId, openConversation, openConversationSettings);
+        }
     }
 
+    // --- OUVERTURE D'UNE CONVERSATION ---
+
     async function openConversation(convId) {
-        currentConversationId = parseInt(convId);
+        const nextId = parseInt(convId);
+        if (isNaN(nextId)) return;
+
+        // Regle de securite locale : naviguer vers une autre conversation reverrouille immediatement la precedente
+        if (currentConversationId && currentConversationId !== nextId) {
+            unlockedConversationId = null;
+            unlockedConversationPassword = null;
+            _syncUnlockedState();
+        }
+
+        currentConversationId = nextId;
         const conv = conversations.find(c => c.id === currentConversationId);
         if (!conv) return;
-
-        // Si la conversation a un mot de passe et n'est pas encore deverrouillee dans la session
-        if (conv.has_password && !unlockedPasswords.has(currentConversationId)) {
-            promptUnlockConversation(conv);
-            return;
-        }
 
         hideWelcomeScreen();
         updateChatHeader(conv.other_username);
         setActiveSidebarConversation(currentConversationId);
 
+        // Conversation protegee par mot de passe et actuellement verrouillee
+        const isLocked = Boolean(conv.has_password && unlockedConversationId !== conv.id);
+        if (isLocked) {
+            conv.unlocked = false;
+            updateLockBtnVisibility(conv);
+            showInlineUnlockScreen(conv);
+            renderConversationList(conversations, currentConversationId, openConversation, openConversationSettings);
+            return;
+        }
+
+        // Conversation accessible (sans mot de passe ou deverrouillee)
+        conv.unlocked = true;
+        updateLockBtnVisibility(conv);
+        hideInlineUnlockScreen();
+        const messagesZone = document.getElementById("messages");
+        if (messagesZone) messagesZone.style.display = "flex";
+
         document.getElementById("messageInput").disabled = false;
         document.getElementById("sendButton").disabled = false;
         document.getElementById("messageInput").placeholder = "Écrire un message...";
 
-        // Calcule la cle E2EE partagee si pas encore fait
         await ensureSharedKey(conv);
-
-        // Recupere et dechiffre les messages
         await loadAndDisplayMessages(conv);
+        renderConversationList(conversations, currentConversationId, openConversation, openConversationSettings);
     }
 
-    async function loadAndDisplayMessages(conv) {
-        const sessionPwd = unlockedPasswords.get(conv.id);
-        const headers = authHeaders();
-        if (sessionPwd) {
-            headers["x-conversation-password"] = sessionPwd;
+    // --- ECRAN DE DEVERROUILLAGE INLINE ---
+
+    function showInlineUnlockScreen(conv) {
+        hideWelcomeScreen();
+        const messagesZone = document.getElementById("messages");
+        if (messagesZone) {
+            messagesZone.style.display = "none";
+            messagesZone.innerHTML = "";
+        }
+        const unlockScreen = document.getElementById("chatUnlockScreen");
+        if (unlockScreen) unlockScreen.style.display = "flex";
+
+        const pwdInput = document.getElementById("inlineUnlockPassword");
+        const errorEl = document.getElementById("inlineUnlockError");
+        if (pwdInput) {
+            pwdInput.value = "";
+            pwdInput.type = "password";
+            setTimeout(() => pwdInput.focus(), 60);
+        }
+        const toggleBtn = document.getElementById("inlineUnlockToggleBtn");
+        if (toggleBtn) toggleBtn.textContent = "👁️";
+        if (errorEl) { errorEl.style.display = "none"; errorEl.textContent = ""; }
+
+        document.getElementById("messageInput").disabled = true;
+        document.getElementById("sendButton").disabled = true;
+        document.getElementById("messageInput").placeholder = "Discussion verrouillée — Déverrouillez pour écrire...";
+    }
+
+    function hideInlineUnlockScreen() {
+        const unlockScreen = document.getElementById("chatUnlockScreen");
+        if (unlockScreen) unlockScreen.style.display = "none";
+        const errorEl = document.getElementById("inlineUnlockError");
+        if (errorEl) { errorEl.style.display = "none"; errorEl.textContent = ""; }
+    }
+
+    async function attemptInlineUnlock() {
+        if (!currentConversationId) return;
+        const conv = conversations.find(c => c.id === currentConversationId);
+        if (!conv) return;
+
+        const pwdInput = document.getElementById("inlineUnlockPassword");
+        const errorEl = document.getElementById("inlineUnlockError");
+        const pwd = pwdInput ? pwdInput.value.trim() : "";
+
+        if (!pwd) {
+            if (errorEl) {
+                errorEl.textContent = "Veuillez entrer le mot de passe de la discussion.";
+                errorEl.style.display = "block";
+            }
+            return;
         }
 
+        const unlockBtn = document.getElementById("inlineUnlockBtn");
+        if (unlockBtn) { unlockBtn.disabled = true; unlockBtn.textContent = "Vérification..."; }
+
         try {
-            const res = await fetch(`${API_BASE}/conversations/${conv.id}/messages`, { headers });
-            if (res.status === 423) {
-                promptUnlockConversation(conv);
-                return;
+            // Verifier le mot de passe aupres du backend
+            await apiUnlockConversation(conv.id, pwd);
+
+            // Mettre en etat deverrouille pour cette vue
+            unlockedConversationId = conv.id;
+            unlockedConversationPassword = pwd;
+            conv.unlocked = true;
+            updateLockBtnVisibility(conv);
+
+            hideInlineUnlockScreen();
+            const messagesZone = document.getElementById("messages");
+            if (messagesZone) messagesZone.style.display = "flex";
+
+            document.getElementById("messageInput").disabled = false;
+            document.getElementById("sendButton").disabled = false;
+            document.getElementById("messageInput").placeholder = "Écrire un message...";
+
+            // Deriver la cle partagee ECDH puis charger les messages
+            await ensureSharedKey(conv);
+            await loadAndDisplayMessages(conv);
+
+            // Met a jour les apercus dans la sidebar
+            await updateConversationPreviews();
+            renderConversationList(conversations, currentConversationId, openConversation, openConversationSettings);
+        } catch (err) {
+            if (errorEl) {
+                errorEl.textContent = err.message || "Mot de passe incorrect.";
+                errorEl.style.display = "block";
             }
+            if (pwdInput) pwdInput.select();
+        } finally {
+            if (unlockBtn) { unlockBtn.disabled = false; unlockBtn.textContent = "Déverrouiller la discussion"; }
+        }
+    }
+
+    const inlineUnlockBtn = document.getElementById("inlineUnlockBtn");
+    const inlineUnlockPassword = document.getElementById("inlineUnlockPassword");
+    const inlineUnlockToggleBtn = document.getElementById("inlineUnlockToggleBtn");
+    const lockConvBtn = document.getElementById("lockConvBtn");
+
+    if (lockConvBtn) {
+        lockConvBtn.addEventListener("click", () => {
+            if (!currentConversationId) return;
+            const conv = conversations.find(c => c.id === currentConversationId);
+            if (!conv) return;
+            unlockedConversationId = null;
+            unlockedConversationPassword = null;
+            conv.unlocked = false;
+            updateLockBtnVisibility(conv);
+            showInlineUnlockScreen(conv);
+            renderConversationList(conversations, currentConversationId, openConversation, openConversationSettings);
+        });
+    }
+
+    if (inlineUnlockBtn) inlineUnlockBtn.addEventListener("click", attemptInlineUnlock);
+
+    if (inlineUnlockPassword) {
+        inlineUnlockPassword.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") { e.preventDefault(); attemptInlineUnlock(); }
+        });
+    }
+
+    if (inlineUnlockToggleBtn) {
+        inlineUnlockToggleBtn.addEventListener("click", () => {
+            const isHidden = inlineUnlockPassword.type === "password";
+            inlineUnlockPassword.type = isHidden ? "text" : "password";
+            inlineUnlockToggleBtn.textContent = isHidden ? "🙈" : "👁️";
+        });
+    }
+
+    // --- CHARGEMENT ET DECHIFFREMENT DES MESSAGES ---
+
+    async function loadAndDisplayMessages(conv) {
+        try {
+            const headers = authHeaders();
+            if (unlockedConversationPassword) {
+                headers["x-conversation-password"] = unlockedConversationPassword;
+            }
+
+            const res = await fetch(`${API_BASE}/conversations/${conv.id}/messages`, {
+                headers
+            });
+
             if (!res.ok) {
+                console.warn(`Erreur recuperation messages HTTP ${res.status}`);
                 renderMessages([], currentUser);
                 return;
             }
+
             const messages = await res.json();
 
-            // Dechiffrement E2EE de chaque message
-            if (conv.sharedKey) {
-                for (let msg of messages) {
-                    try {
-                        let text = await decryptMessage(msg.content, conv.sharedKey);
-                        // Si un mot de passe est defini, tentative de dechiffrement avec la cle du mot de passe
-                        const pwdKey = passwordDerivedKeys.get(conv.id);
-                        if (pwdKey) {
-                            try {
-                                text = await decryptMessage(text, pwdKey);
-                            } catch (e) {}
-                        }
-                        msg.content = text;
-                    } catch (e) {
-                        msg.content = "⚠️ [Message chiffré - Impossible de déchiffrer]";
-                    }
-                }
+            // S'assurer que la cle partagee E2EE est disponible
+            await ensureSharedKey(conv);
+
+            // Dechiffrement de chaque message avec la cle partagee ECDH
+            for (const msg of messages) {
+                msg.content = await decryptConversationMessage(msg.content, conv.sharedKey);
+            }
+
+            if (messages.length > 0) {
+                conv.last_message = messages[messages.length - 1].content;
             }
 
             renderMessages(messages, currentUser);
         } catch (err) {
             console.error("Erreur chargement messages :", err);
+            renderMessages([], currentUser);
         }
     }
 
     async function refreshConversations() {
-        conversations = await apiGetConversations();
+        const newConversations = await apiGetConversations();
+        // Conserver les cles partagees et etats calcules
+        newConversations.forEach(newConv => {
+            const existing = conversations.find(c => c.id === newConv.id);
+            if (existing && existing.sharedKey) {
+                newConv.sharedKey = existing.sharedKey;
+                newConv._targetPubKeyPem = existing._targetPubKeyPem;
+            }
+            newConv.unlocked = Boolean(newConv.id === unlockedConversationId);
+        });
+        conversations = newConversations;
         renderConversationList(conversations, currentConversationId, openConversation, openConversationSettings);
+        updateConversationPreviews();
     }
 
-    // --- WEBSOCKET : message recu ---
+    // --- WEBSOCKET : NOUVEAU MESSAGE RECU ---
 
     async function onNewMessage(msg) {
         let conv = conversations.find(c => c.id === msg.conversation_id);
@@ -181,34 +417,25 @@ document.addEventListener("DOMContentLoaded", async () => {
             conv = conversations.find(c => c.id === msg.conversation_id);
         }
 
-        if (conv) {
-            await ensureSharedKey(conv);
-        }
+        if (conv) await ensureSharedKey(conv);
 
-        // Dechiffrement du contenu
-        let decryptedText = msg.content;
-        if (conv && conv.sharedKey) {
-            try {
-                decryptedText = await decryptMessage(msg.content, conv.sharedKey);
-                const pwdKey = passwordDerivedKeys.get(conv.id);
-                if (pwdKey) {
-                    try {
-                        decryptedText = await decryptMessage(decryptedText, pwdKey);
-                    } catch (e) {}
-                }
-            } catch (e) {
-                decryptedText = "⚠️ [Message chiffré - Impossible de déchiffrer]";
-            }
-        }
+        // Dechiffrement E2EE avec la cle partagee ECDH
+        const decryptedText = await decryptConversationMessage(
+            msg.content,
+            conv ? conv.sharedKey : null
+        );
         msg.content = decryptedText;
 
-        // Mise a jour de la vue si la conversation est ouverte
+        // Affichage dans la vue si la conversation est ouverte et non verrouillee
         if (currentConversationId && msg.conversation_id === currentConversationId) {
-            appendMessageToDOM(msg, currentUser);
-            scrollToBottom();
+            const isLocked = Boolean(conv && conv.has_password && unlockedConversationId !== conv.id);
+            if (!isLocked) {
+                appendMessageToDOM(msg, currentUser);
+                scrollToBottom();
+            }
         }
 
-        // Mise a jour de la liste dans la barre laterale
+        // Mise a jour de l'apercu dans la sidebar
         if (conv) {
             conv.last_message = decryptedText;
             renderConversationList(conversations, currentConversationId, openConversation, openConversationSettings);
@@ -228,24 +455,17 @@ document.addEventListener("DOMContentLoaded", async () => {
             const conv = conversations.find(c => c.id === currentConversationId);
             let messageToSend = text;
 
-            // Chiffrement avec cle E2EE
             if (conv) {
                 await ensureSharedKey(conv);
-
-                // Si mot de passe actif, sur-chiffrement avec la cle issue du mot de passe
-                const pwdKey = passwordDerivedKeys.get(conv.id);
-                if (pwdKey) {
-                    messageToSend = await encryptMessage(messageToSend, pwdKey);
-                }
-
+                // Chiffrement E2EE exclusivement avec la cle partagee ECDH
                 if (conv.sharedKey) {
-                    messageToSend = await encryptMessage(messageToSend, conv.sharedKey);
+                    messageToSend = await encryptMessage(text, conv.sharedKey);
                 }
             }
 
             const newMsg = await apiSendMessage(currentConversationId, messageToSend);
 
-            // Affiche en local le texte en clair directement
+            // Affiche immediatement en clair cote envoyeur
             newMsg.content = text;
             appendMessageToDOM(newMsg, currentUser);
             scrollToBottom();
@@ -255,16 +475,13 @@ document.addEventListener("DOMContentLoaded", async () => {
                 renderConversationList(conversations, currentConversationId, openConversation, openConversationSettings);
             }
         } catch (err) {
-            console.error("Erreur envoi :", err);
+            console.error("Erreur envoi message :", err);
         }
     }
 
     document.getElementById("sendButton").addEventListener("click", sendMessage);
     document.getElementById("messageInput").addEventListener("keydown", (e) => {
-        if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            sendMessage();
-        }
+        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
     });
 
     // --- RECHERCHE DANS LA SIDEBAR ---
@@ -303,11 +520,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         const results = document.getElementById("userSearchResults");
         const status = document.getElementById("searchStatus");
 
-        if (!query) {
-            results.innerHTML = "";
-            status.textContent = "";
-            return;
-        }
+        if (!query) { results.innerHTML = ""; status.textContent = ""; return; }
 
         searchTimeout = setTimeout(async () => {
             status.textContent = "Recherche...";
@@ -315,32 +528,25 @@ document.addEventListener("DOMContentLoaded", async () => {
             try {
                 const users = await apiSearchUsers(query);
                 results.innerHTML = "";
-
                 if (users.length === 0) {
                     status.textContent = "Aucun utilisateur trouvé.";
                     return;
                 }
-
                 status.textContent = "";
                 users.forEach(user => {
                     const item = document.createElement("div");
                     item.className = "autocomplete-item";
-                    const color = getAvatarColor(user.username);
-
                     const avatarDiv = document.createElement("div");
-                    avatarDiv.className = `avatar ${color}`;
+                    avatarDiv.className = `avatar ${getAvatarColor(user.username)}`;
                     avatarDiv.textContent = getInitials(user.username);
-
                     const strong = document.createElement("strong");
                     strong.textContent = user.username;
-
                     item.appendChild(avatarDiv);
                     item.appendChild(strong);
-
                     item.addEventListener("click", () => selectUserForChat(user.id));
                     results.appendChild(item);
                 });
-            } catch (err) {
+            } catch {
                 status.textContent = "Erreur de connexion.";
                 status.style.color = "#fc8181";
             }
@@ -354,15 +560,12 @@ document.addEventListener("DOMContentLoaded", async () => {
             status.style.color = "var(--muted)";
 
             const conv = await apiCreateConversation(targetUserId);
-
             document.getElementById("newChatModal").hidden = true;
 
-            // Recharge et ouvre directement la bonne conversation
-            conversations = await apiGetConversations();
-            renderConversationList(conversations, conv.id, openConversation, openConversationSettings);
+            await refreshConversations();
             openConversation(conv.id);
         } catch (err) {
-            status.textContent = err.message || "Impossible de creer la conversation.";
+            status.textContent = err.message || "Impossible de créer la conversation.";
             status.style.color = "#fc8181";
         }
     }
@@ -382,34 +585,52 @@ document.addEventListener("DOMContentLoaded", async () => {
             infoModal.hidden = false;
         });
     }
-
     if (closeInfoModal) closeInfoModal.addEventListener("click", () => { infoModal.hidden = true; });
     if (confirmInfoModal) confirmInfoModal.addEventListener("click", () => { infoModal.hidden = true; });
     if (infoModal) {
-        infoModal.addEventListener("click", (e) => {
-            if (e.target === infoModal) infoModal.hidden = true;
-        });
+        infoModal.addEventListener("click", (e) => { if (e.target === infoModal) infoModal.hidden = true; });
     }
 
-    // --- MODALE ETAT DE CONNEXION ET DU CHIFFREMENT (SOUS LE PSEUDO) ---
+    // --- MODALE ETAT DU CHIFFREMENT & INSPECTION DES CLES ---
 
     const chatStatusBtn = document.getElementById("chatStatusBtn");
     const cryptoStatusModal = document.getElementById("cryptoStatusModal");
     const closeCryptoStatusModal = document.getElementById("closeCryptoStatusModal");
     const closeCryptoStatusBtn = document.getElementById("closeCryptoStatusBtn");
+    const revealKeysBtn = document.getElementById("revealKeysBtn");
+    const hideKeysBtn = document.getElementById("hideKeysBtn");
+    const cryptoAccountPassword = document.getElementById("cryptoAccountPassword");
+    const revealKeysError = document.getElementById("revealKeysError");
+    const keysAuthGate = document.getElementById("keysAuthGate");
+    const keysDisplayArea = document.getElementById("keysDisplayArea");
+
+    function hideKeysDisplay() {
+        if (keysDisplayArea) keysDisplayArea.style.display = "none";
+        if (hideKeysBtn) hideKeysBtn.style.display = "none";
+        if (keysAuthGate) keysAuthGate.style.display = "flex";
+        if (cryptoAccountPassword) cryptoAccountPassword.value = "";
+        if (revealKeysError) { revealKeysError.style.display = "none"; revealKeysError.textContent = ""; }
+        const ids = ["keyMyPublic", "keyMyPrivate", "keyContactPublic", "keyShared"];
+        ids.forEach(id => { const el = document.getElementById(id); if (el) el.textContent = "--"; });
+    }
 
     if (chatStatusBtn) {
         chatStatusBtn.addEventListener("click", () => {
             const conv = conversations.find(c => c.id === currentConversationId);
 
             document.getElementById("statusDomain").textContent = window.location.hostname || "localhost";
-            document.getElementById("statusHttpProto").textContent = `${window.location.protocol.replace(":", "").toUpperCase()} (Port ${window.location.port || (window.location.protocol === "https:" ? "443" : "80")})`;
-            document.getElementById("statusWsProto").textContent = window.location.protocol === "https:" ? "WSS (WebSocket Sécurisé)" : "WS (WebSocket)";
+            document.getElementById("statusHttpProto").textContent =
+                `${window.location.protocol.replace(":", "").toUpperCase()} (Port ${window.location.port || (window.location.protocol === "https:" ? "443" : "80")})`;
+            document.getElementById("statusWsProto").textContent =
+                window.location.protocol === "https:" ? "WSS (WebSocket Sécurisé)" : "WS (WebSocket)";
             document.getElementById("statusWsState").textContent = getWebSocketStatus();
 
+            const activeContactEl = document.getElementById("statusActiveContact");
             const targetPubKeyEl = document.getElementById("statusTargetPubKey");
             const sharedKeyEl = document.getElementById("statusSharedKey");
             const pwdLockEl = document.getElementById("statusPasswordLock");
+
+            activeContactEl.textContent = conv ? `@${conv.other_username}` : "Aucune discussion active";
 
             if (conv && conv.sharedKey) {
                 targetPubKeyEl.textContent = "Vérifiée et active 🟢";
@@ -424,26 +645,124 @@ document.addEventListener("DOMContentLoaded", async () => {
             }
 
             if (conv && conv.has_password) {
-                pwdLockEl.textContent = "Activée (Double chiffrement PBKDF2) 🔒";
+                pwdLockEl.textContent = "Activée (accès local protégé) 🔒";
                 pwdLockEl.style.color = "#c4b5fd";
             } else {
                 pwdLockEl.textContent = "Désactivée (E2EE standard)";
                 pwdLockEl.style.color = "var(--muted)";
             }
 
+            hideKeysDisplay();
             cryptoStatusModal.hidden = false;
         });
     }
 
-    if (closeCryptoStatusModal) closeCryptoStatusModal.addEventListener("click", () => { cryptoStatusModal.hidden = true; });
-    if (closeCryptoStatusBtn) closeCryptoStatusBtn.addEventListener("click", () => { cryptoStatusModal.hidden = true; });
+    if (closeCryptoStatusModal) {
+        closeCryptoStatusModal.addEventListener("click", () => { cryptoStatusModal.hidden = true; hideKeysDisplay(); });
+    }
+    if (closeCryptoStatusBtn) {
+        closeCryptoStatusBtn.addEventListener("click", () => { cryptoStatusModal.hidden = true; hideKeysDisplay(); });
+    }
     if (cryptoStatusModal) {
         cryptoStatusModal.addEventListener("click", (e) => {
-            if (e.target === cryptoStatusModal) cryptoStatusModal.hidden = true;
+            if (e.target === cryptoStatusModal) { cryptoStatusModal.hidden = true; hideKeysDisplay(); }
         });
     }
 
-    // --- MODALE PARAMETRES DE CONVERSATION (DECLENCHEE DEPUIS LA SIDEBAR) ---
+    // Affichage des cles apres verification du mot de passe compte
+    if (revealKeysBtn) {
+        revealKeysBtn.addEventListener("click", async () => {
+            const pwd = cryptoAccountPassword ? cryptoAccountPassword.value : "";
+            if (!pwd) {
+                if (revealKeysError) {
+                    revealKeysError.textContent = "Veuillez entrer votre mot de passe de compte.";
+                    revealKeysError.style.display = "block";
+                }
+                return;
+            }
+
+            revealKeysBtn.disabled = true;
+            revealKeysBtn.textContent = "Vérification...";
+            if (revealKeysError) revealKeysError.style.display = "none";
+
+            try {
+                await apiVerifyAccountPassword(pwd);
+
+                if (keysAuthGate) keysAuthGate.style.display = "none";
+                if (keysDisplayArea) keysDisplayArea.style.display = "flex";
+                if (hideKeysBtn) hideKeysBtn.style.display = "inline-flex";
+
+                // Cle publique
+                document.getElementById("keyMyPublic").textContent = myPublicKeyBase64 || "Introuvable";
+
+                // Cle privee
+                if (myPrivateKey) {
+                    document.getElementById("keyMyPrivate").textContent = await exportPrivateKey(myPrivateKey);
+                } else {
+                    document.getElementById("keyMyPrivate").textContent = "Introuvable (reconnectez-vous)";
+                }
+
+                const conv = conversations.find(c => c.id === currentConversationId);
+
+                // Cle publique du contact
+                const contactWrap = document.getElementById("keyContactPublicWrap");
+                if (conv && conv._targetPubKeyPem) {
+                    document.getElementById("keyContactPublic").textContent = conv._targetPubKeyPem;
+                    if (contactWrap) contactWrap.style.display = "flex";
+                } else {
+                    if (contactWrap) contactWrap.style.display = "none";
+                }
+
+                // Cle partagee AES-GCM-256
+                const sharedWrap = document.getElementById("keySharedWrap");
+                if (conv && conv.sharedKey) {
+                    try {
+                        document.getElementById("keyShared").textContent = await exportRawKey(conv.sharedKey);
+                    } catch {
+                        document.getElementById("keyShared").textContent = "Clé active (non exportable)";
+                    }
+                    if (sharedWrap) sharedWrap.style.display = "flex";
+                } else {
+                    if (sharedWrap) sharedWrap.style.display = "none";
+                }
+
+            } catch (err) {
+                if (revealKeysError) {
+                    revealKeysError.textContent = err.message || "Mot de passe incorrect.";
+                    revealKeysError.style.display = "block";
+                }
+            } finally {
+                revealKeysBtn.disabled = false;
+                revealKeysBtn.textContent = "Afficher les clés 👁️";
+            }
+        });
+    }
+
+    if (cryptoAccountPassword) {
+        cryptoAccountPassword.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") { e.preventDefault(); if (revealKeysBtn) revealKeysBtn.click(); }
+        });
+    }
+
+    if (hideKeysBtn) hideKeysBtn.addEventListener("click", hideKeysDisplay);
+
+    // Boutons de copie des cles
+    document.querySelectorAll(".copy-key-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const targetEl = document.getElementById(btn.dataset.copyTarget);
+            if (!targetEl) return;
+            const text = targetEl.textContent.trim();
+            if (!text || text === "--") return;
+            navigator.clipboard.writeText(text).then(() => {
+                const original = btn.textContent;
+                btn.textContent = "Copié ✓";
+                btn.classList.add("btn-copied");
+                setTimeout(() => { btn.textContent = original; btn.classList.remove("btn-copied"); }, 1500);
+            }).catch(() => { btn.textContent = "Erreur copie"; });
+        });
+    });
+
+    // --- MODALE PARAMETRES DE CONVERSATION ---
 
     const convSettingsModal = document.getElementById("convSettingsModal");
     const closeConvSettingsModal = document.getElementById("closeConvSettingsModal");
@@ -453,11 +772,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     const convPasswordInput = document.getElementById("convPasswordInput");
     const pwdStatusNotice = document.getElementById("pwdStatusNotice");
     const convSettingsFeedback = document.getElementById("convSettingsFeedback");
-
     const removePwdConfirmBox = document.getElementById("removePwdConfirmBox");
     const cancelRemovePwdBtn = document.getElementById("cancelRemovePwdBtn");
     const confirmRemovePwdBtn = document.getElementById("confirmRemovePwdBtn");
-
     const deleteConvConfirmBox = document.getElementById("deleteConvConfirmBox");
     const cancelDeleteConvBtn = document.getElementById("cancelDeleteConvBtn");
     const confirmDeleteConvBtn = document.getElementById("confirmDeleteConvBtn");
@@ -481,136 +798,202 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (!conv) return;
 
         document.getElementById("convSettingsTitle").textContent = `Paramètres — ${conv.other_username}`;
-        convPasswordInput.value = "";
+        if (convPasswordInput) convPasswordInput.value = "";
         clearSettingsFeedback();
 
+        const currentPwdFieldWrap = document.getElementById("currentPwdFieldWrap");
+        const newPwdFieldLabel = document.getElementById("newPwdFieldLabel");
+        const currentConvPasswordInput = document.getElementById("currentConvPasswordInput");
+        const removeConvPasswordInput = document.getElementById("removeConvPasswordInput");
+
+        if (currentConvPasswordInput) currentConvPasswordInput.value = "";
+        if (removeConvPasswordInput) removeConvPasswordInput.value = "";
         if (removePwdConfirmBox) removePwdConfirmBox.hidden = true;
         if (deleteConvConfirmBox) deleteConvConfirmBox.hidden = true;
 
         if (conv.has_password) {
-            pwdStatusNotice.hidden = false;
-            pwdStatusNotice.textContent = "Cette discussion est actuellement protégée par un mot de passe.";
-            removeConvPasswordBtn.hidden = false;
-            saveConvPasswordBtn.textContent = "Modifier le mot de passe";
+            if (pwdStatusNotice) {
+                pwdStatusNotice.hidden = false;
+                pwdStatusNotice.textContent = "Cette discussion est actuellement protégée par un mot de passe.";
+            }
+            if (currentPwdFieldWrap) currentPwdFieldWrap.hidden = false;
+            if (newPwdFieldLabel) newPwdFieldLabel.style.display = "block";
+            if (removeConvPasswordBtn) removeConvPasswordBtn.hidden = false;
+            if (saveConvPasswordBtn) saveConvPasswordBtn.textContent = "Modifier le mot de passe";
         } else {
-            pwdStatusNotice.hidden = true;
-            removeConvPasswordBtn.hidden = true;
-            saveConvPasswordBtn.textContent = "Définir le mot de passe";
+            if (pwdStatusNotice) pwdStatusNotice.hidden = true;
+            if (currentPwdFieldWrap) currentPwdFieldWrap.hidden = true;
+            if (newPwdFieldLabel) newPwdFieldLabel.style.display = "none";
+            if (removeConvPasswordBtn) removeConvPasswordBtn.hidden = true;
+            if (saveConvPasswordBtn) saveConvPasswordBtn.textContent = "Définir le mot de passe";
         }
 
-        convSettingsModal.hidden = false;
+        if (convSettingsModal) convSettingsModal.hidden = false;
     }
 
     if (closeConvSettingsModal) {
-        closeConvSettingsModal.addEventListener("click", () => {
-            convSettingsModal.hidden = true;
-        });
+        closeConvSettingsModal.addEventListener("click", () => { convSettingsModal.hidden = true; });
     }
-
     if (convSettingsModal) {
         convSettingsModal.addEventListener("click", (e) => {
-            if (e.target === convSettingsModal) {
-                convSettingsModal.hidden = true;
-            }
+            if (e.target === convSettingsModal) convSettingsModal.hidden = true;
         });
     }
 
-    // Definir / modifier mot de passe de conversation (sans alert)
+    // Definir / modifier le mot de passe
     if (saveConvPasswordBtn) {
         saveConvPasswordBtn.addEventListener("click", async () => {
+            if (!convPasswordInput) return;
             const pwd = convPasswordInput.value.trim();
             if (!pwd || pwd.length < 4) {
                 showSettingsFeedback("Le mot de passe doit contenir au moins 4 caractères.", true);
                 return;
             }
 
+            const conv = conversations.find(c => c.id === settingsTargetConvId);
+            let currentPwd = null;
+            if (conv && conv.has_password) {
+                const el = document.getElementById("currentConvPasswordInput");
+                currentPwd = el ? el.value.trim() : "";
+                if (!currentPwd) {
+                    showSettingsFeedback("Veuillez saisir le mot de passe actuel pour modifier la protection.", true);
+                    return;
+                }
+            }
+
             try {
-                await apiSetConversationPassword(settingsTargetConvId, pwd);
-                const conv = conversations.find(c => c.id === settingsTargetConvId);
+                await apiSetConversationPassword(settingsTargetConvId, pwd, currentPwd);
                 if (conv) {
                     conv.has_password = true;
-                    unlockedPasswords.set(settingsTargetConvId, pwd);
-                    const derivedKey = await deriveKeyFromPassword(pwd, `conv_${settingsTargetConvId}`);
-                    passwordDerivedKeys.set(settingsTargetConvId, derivedKey);
+                    // La conversation est protegee et verrouillee par defaut
+                    conv.unlocked = false;
+                    if (unlockedConversationId === settingsTargetConvId) {
+                        unlockedConversationId = null;
+                        unlockedConversationPassword = null;
+                    }
+
+                    if (currentConversationId === settingsTargetConvId) {
+                        updateLockBtnVisibility(conv);
+                        showInlineUnlockScreen(conv);
+                    }
                 }
-                showSettingsFeedback("Mot de passe enregistré avec succès !", false);
+                showSettingsFeedback("Mot de passe enregistré ! Discussion protégée 🔒", false);
                 convPasswordInput.value = "";
                 await refreshConversations();
-
-                setTimeout(() => {
-                    convSettingsModal.hidden = true;
-                }, 1200);
+                setTimeout(() => { convSettingsModal.hidden = true; }, 1200);
             } catch (err) {
                 showSettingsFeedback(err.message || "Erreur lors de l'enregistrement du mot de passe.", true);
             }
         });
     }
 
-    // Supprimer mot de passe de conversation (confirmation integree, sans confirm)
+    if (convPasswordInput) {
+        convPasswordInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") { e.preventDefault(); if (saveConvPasswordBtn) saveConvPasswordBtn.click(); }
+        });
+    }
+
+    const currentConvPasswordInput = document.getElementById("currentConvPasswordInput");
+    if (currentConvPasswordInput) {
+        currentConvPasswordInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") { e.preventDefault(); if (saveConvPasswordBtn) saveConvPasswordBtn.click(); }
+        });
+    }
+
+    // Supprimer le mot de passe
     if (removeConvPasswordBtn) {
         removeConvPasswordBtn.addEventListener("click", () => {
-            removePwdConfirmBox.hidden = false;
+            if (removePwdConfirmBox) removePwdConfirmBox.hidden = false;
+            const inp = document.getElementById("removeConvPasswordInput");
+            if (inp) { inp.value = ""; inp.focus(); }
             clearSettingsFeedback();
         });
     }
 
     if (cancelRemovePwdBtn) {
-        cancelRemovePwdBtn.addEventListener("click", () => {
-            removePwdConfirmBox.hidden = true;
-        });
+        cancelRemovePwdBtn.addEventListener("click", () => { if (removePwdConfirmBox) removePwdConfirmBox.hidden = true; });
     }
 
     if (confirmRemovePwdBtn) {
         confirmRemovePwdBtn.addEventListener("click", async () => {
+            const inp = document.getElementById("removeConvPasswordInput");
+            const currentPwd = inp ? inp.value.trim() : "";
+
+            if (!currentPwd) {
+                showSettingsFeedback("Veuillez saisir le mot de passe actuel pour confirmer la suppression.", true);
+                if (inp) inp.focus();
+                return;
+            }
+
             try {
-                await apiSetConversationPassword(settingsTargetConvId, null);
+                await apiSetConversationPassword(settingsTargetConvId, null, currentPwd);
                 const conv = conversations.find(c => c.id === settingsTargetConvId);
                 if (conv) {
                     conv.has_password = false;
-                    unlockedPasswords.delete(settingsTargetConvId);
-                    passwordDerivedKeys.delete(settingsTargetConvId);
-                }
-                removePwdConfirmBox.hidden = true;
-                removeConvPasswordBtn.hidden = true;
-                pwdStatusNotice.hidden = true;
-                saveConvPasswordBtn.textContent = "Définir le mot de passe";
-                showSettingsFeedback("Mot de passe supprimé avec succès.", false);
-                await refreshConversations();
+                    conv.unlocked = true;
+                    unlockedConversationId = conv.id;
+                    unlockedConversationPassword = null;
 
-                setTimeout(() => {
-                    convSettingsModal.hidden = true;
-                }, 1200);
+                    if (currentConversationId === settingsTargetConvId) {
+                        updateLockBtnVisibility(conv);
+                        hideInlineUnlockScreen();
+                        const messagesZone = document.getElementById("messages");
+                        if (messagesZone) messagesZone.style.display = "flex";
+                        document.getElementById("messageInput").disabled = false;
+                        document.getElementById("sendButton").disabled = false;
+                        document.getElementById("messageInput").placeholder = "Écrire un message...";
+                        await loadAndDisplayMessages(conv);
+                    }
+                }
+                if (removePwdConfirmBox) removePwdConfirmBox.hidden = true;
+                if (removeConvPasswordBtn) removeConvPasswordBtn.hidden = true;
+                if (pwdStatusNotice) pwdStatusNotice.hidden = true;
+                const wrap = document.getElementById("currentPwdFieldWrap");
+                if (wrap) wrap.hidden = true;
+                const lbl = document.getElementById("newPwdFieldLabel");
+                if (lbl) lbl.style.display = "none";
+                if (saveConvPasswordBtn) saveConvPasswordBtn.textContent = "Définir le mot de passe";
+                showSettingsFeedback("Protection supprimée. Discussion déverrouillée !", false);
+                await refreshConversations();
+                setTimeout(() => { convSettingsModal.hidden = true; }, 1200);
             } catch (err) {
                 showSettingsFeedback(err.message || "Erreur lors de la suppression du mot de passe.", true);
             }
         });
     }
 
-    // Supprimer la conversation de son compte (confirmation integree, sans confirm)
+    const removeConvPasswordInput = document.getElementById("removeConvPasswordInput");
+    if (removeConvPasswordInput) {
+        removeConvPasswordInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") { e.preventDefault(); if (confirmRemovePwdBtn) confirmRemovePwdBtn.click(); }
+        });
+    }
+
+    // Supprimer la conversation
     if (deleteConvBtn) {
         deleteConvBtn.addEventListener("click", () => {
-            deleteConvConfirmBox.hidden = false;
+            if (deleteConvConfirmBox) deleteConvConfirmBox.hidden = false;
             clearSettingsFeedback();
         });
     }
 
     if (cancelDeleteConvBtn) {
-        cancelDeleteConvBtn.addEventListener("click", () => {
-            deleteConvConfirmBox.hidden = true;
-        });
+        cancelDeleteConvBtn.addEventListener("click", () => { if (deleteConvConfirmBox) deleteConvConfirmBox.hidden = true; });
     }
 
     if (confirmDeleteConvBtn) {
         confirmDeleteConvBtn.addEventListener("click", async () => {
             try {
                 await apiDeleteConversation(settingsTargetConvId);
-                deleteConvConfirmBox.hidden = true;
+                if (deleteConvConfirmBox) deleteConvConfirmBox.hidden = true;
                 convSettingsModal.hidden = true;
 
                 if (currentConversationId === settingsTargetConvId) {
                     currentConversationId = null;
+                    unlockedConversationId = null;
                     showWelcomeScreen();
                     resetChatHeader();
+                    hideInlineUnlockScreen();
                     document.getElementById("messageInput").disabled = true;
                     document.getElementById("sendButton").disabled = true;
                     document.getElementById("messageInput").placeholder = "Sélectionnez une conversation...";
@@ -618,85 +1001,18 @@ document.addEventListener("DOMContentLoaded", async () => {
 
                 await refreshConversations();
             } catch (err) {
-                showSettingsFeedback(err.message || "Erreur lors de la suppression de la conversation.", true);
+                showSettingsFeedback(err.message || "Erreur lors de la suppression.", true);
             }
         });
     }
 
-    // --- MODALE DEVERROUILLAGE CONVERSATION ---
-
-    let pendingUnlockConv = null;
-
-    function promptUnlockConversation(conv) {
-        pendingUnlockConv = conv;
-        const modal = document.getElementById("unlockModal");
-        const input = document.getElementById("unlockPasswordInput");
-        const error = document.getElementById("unlockError");
-
-        input.value = "";
-        error.hidden = true;
-        error.textContent = "";
-        modal.hidden = false;
-        input.focus();
-    }
-
-    const confirmUnlockBtn = document.getElementById("confirmUnlockBtn");
-    const cancelUnlockBtn = document.getElementById("cancelUnlockBtn");
-    const closeUnlockModal = document.getElementById("closeUnlockModal");
-    const unlockPasswordInput = document.getElementById("unlockPasswordInput");
-    const unlockError = document.getElementById("unlockError");
-
-    async function attemptUnlock() {
-        if (!pendingUnlockConv) return;
-        const pwd = unlockPasswordInput.value.trim();
-        if (!pwd) return;
-
-        try {
-            await apiUnlockConversation(pendingUnlockConv.id, pwd);
-            unlockedPasswords.set(pendingUnlockConv.id, pwd);
-            const derivedKey = await deriveKeyFromPassword(pwd, `conv_${pendingUnlockConv.id}`);
-            passwordDerivedKeys.set(pendingUnlockConv.id, derivedKey);
-
-            document.getElementById("unlockModal").hidden = true;
-
-            const targetConv = pendingUnlockConv;
-            pendingUnlockConv = null;
-            openConversation(targetConv.id);
-        } catch (err) {
-            unlockError.textContent = "Mot de passe incorrect.";
-            unlockError.hidden = false;
-        }
-    }
-
-    if (confirmUnlockBtn) confirmUnlockBtn.addEventListener("click", attemptUnlock);
-    if (unlockPasswordInput) {
-        unlockPasswordInput.addEventListener("keydown", (e) => {
-            if (e.key === "Enter") {
-                e.preventDefault();
-                attemptUnlock();
-            }
-        });
-    }
-
-    if (cancelUnlockBtn) {
-        cancelUnlockBtn.addEventListener("click", () => {
-            document.getElementById("unlockModal").hidden = true;
-            pendingUnlockConv = null;
-        });
-    }
-    if (closeUnlockModal) {
-        closeUnlockModal.addEventListener("click", () => {
-            document.getElementById("unlockModal").hidden = true;
-            pendingUnlockConv = null;
-        });
-    }
-
-});
+}); // fin DOMContentLoaded
 
 // --- PROFIL SIDEBAR ---
 
 function renderProfileLoggedOut() {
     const profileSection = document.getElementById("profileSection");
+    if (!profileSection) return;
     profileSection.innerHTML = "";
 
     const actionsDiv = document.createElement("div");
@@ -716,15 +1032,18 @@ function renderProfileLoggedOut() {
     actionsDiv.appendChild(registerLink);
     profileSection.appendChild(actionsDiv);
 
-    document.getElementById("messageInput").disabled = true;
-    document.getElementById("sendButton").disabled = true;
-    document.getElementById("messageInput").placeholder = "Connectez-vous pour discuter...";
+    const inp = document.getElementById("messageInput");
+    const btn = document.getElementById("sendButton");
+    if (inp) { inp.disabled = true; inp.placeholder = "Connectez-vous pour discuter..."; }
+    if (btn) btn.disabled = true;
 }
 
 function renderProfileLoggedIn(user) {
-    const color = getAvatarColor(user.username);
     const profileSection = document.getElementById("profileSection");
+    if (!profileSection) return;
     profileSection.innerHTML = "";
+
+    const color = getAvatarColor(user.username);
 
     const avatarDiv = document.createElement("div");
     avatarDiv.className = `avatar ${color}`;
@@ -756,7 +1075,8 @@ function renderProfileLoggedIn(user) {
     profileSection.appendChild(infoDiv);
     profileSection.appendChild(logoutBtn);
 
-    document.getElementById("messageInput").disabled = true;
-    document.getElementById("sendButton").disabled = true;
-    document.getElementById("messageInput").placeholder = "Sélectionnez une conversation...";
+    const inp = document.getElementById("messageInput");
+    const btn = document.getElementById("sendButton");
+    if (inp) { inp.disabled = true; inp.placeholder = "Sélectionnez une conversation..."; }
+    if (btn) btn.disabled = true;
 }

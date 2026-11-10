@@ -68,7 +68,40 @@ router.post('/login', rateLimiter(60000, 10), async (req, res) => {
 
 // Recupere l'utilisateur actuel
 router.get('/me', authMiddleware, (req, res) => {
-    res.json({ user: req.user });
+    res.json({
+        user: {
+            id: req.user.userId,
+            userId: req.user.userId,
+            username: req.user.username
+        }
+    });
+});
+
+// Verification du mot de passe du compte (limite a 5 essais par minute pour contrer le brute-force)
+router.post('/verify-password', authMiddleware, rateLimiter(60000, 5), async (req, res) => {
+    const { password } = req.body;
+    const userId = req.user.userId;
+
+    if (!password || typeof password !== 'string') {
+        return res.status(400).json({ error: 'Mot de passe requis.' });
+    }
+
+    try {
+        const result = await pool.query('SELECT password_hash FROM users WHERE id = $1', [userId]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Utilisateur introuvable.' });
+        }
+
+        const valid = await bcrypt.compare(password, result.rows[0].password_hash);
+        if (!valid) {
+            return res.status(401).json({ error: 'Mot de passe du compte incorrect.' });
+        }
+
+        res.json({ valid: true });
+    } catch (err) {
+        console.error('Erreur verification mot de passe compte :', err);
+        res.status(500).json({ error: 'Erreur serveur.' });
+    }
 });
 
 module.exports = router;

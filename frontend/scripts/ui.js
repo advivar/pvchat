@@ -63,10 +63,20 @@ function renderConversationList(conversations, currentConversationId, onClickCal
 
         const color = getAvatarColor(conv.other_username);
 
-        // Affiche un indicateur si la conversation est verrouillee
-        let preview = conv.last_message || "Nouvelle discussion";
+        // Affiche un apercu propre selon l'etat de verrouillage et de chiffrement
+        let preview = "Nouvelle discussion";
         if (conv.has_password) {
-            preview = "🔒 " + (conv.last_message || "Protégée par mot de passe");
+            if (conv.unlocked && conv.last_message && !isEncryptedPayload(conv.last_message)) {
+                preview = "🔒 " + conv.last_message;
+            } else {
+                preview = "🔒 Discussion protégée par mot de passe";
+            }
+        } else if (conv.last_message) {
+            if (typeof isEncryptedPayload === "function" && isEncryptedPayload(conv.last_message)) {
+                preview = "🔒 Message chiffré";
+            } else {
+                preview = conv.last_message;
+            }
         }
 
         const avatarSpan = document.createElement("span");
@@ -199,7 +209,14 @@ function scrollToBottom() {
 
 function showWelcomeScreen() {
     const welcome = document.getElementById("welcomeScreen");
-    if (welcome) welcome.style.display = "";
+    const unlock = document.getElementById("chatUnlockScreen");
+    const messages = document.getElementById("messages");
+    if (welcome) welcome.style.display = "flex";
+    if (unlock) unlock.style.display = "none";
+    if (messages) {
+        messages.style.display = "none";
+        messages.innerHTML = "";
+    }
 }
 
 function hideWelcomeScreen() {
@@ -230,6 +247,9 @@ function resetChatHeader() {
     const placeholder = document.getElementById("chatStatusPlaceholder");
     if (statusBtn) statusBtn.style.display = "none";
     if (placeholder) placeholder.style.display = "";
+
+    const lockBtn = document.getElementById("lockConvBtn");
+    if (lockBtn) lockBtn.style.display = "none";
 }
 
 function setActiveSidebarConversation(convId) {

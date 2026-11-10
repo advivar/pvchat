@@ -14,7 +14,12 @@ async function apiGetMe() {
     const res = await fetch(`${API_BASE}/me`, { headers: authHeaders() });
     if (!res.ok) return null;
     const data = await res.json();
-    return data.user;
+    if (data && data.user) {
+        data.user.id = data.user.id || data.user.userId;
+        data.user.userId = data.user.id;
+        return data.user;
+    }
+    return null;
 }
 
 async function apiGetConversations() {
@@ -97,12 +102,12 @@ async function apiDeleteConversation(convId) {
     return data;
 }
 
-// Definir ou supprimer le mot de passe d'une conversation
-async function apiSetConversationPassword(convId, password) {
+// Definir, modifier ou supprimer le mot de passe d'une conversation
+async function apiSetConversationPassword(convId, password, currentPassword) {
     const res = await fetch(`${API_BASE}/conversations/${convId}/password`, {
         method: "PUT",
         headers: authHeaders(),
-        body: JSON.stringify({ password })
+        body: JSON.stringify({ password, currentPassword })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Erreur configuration mot de passe");
@@ -118,5 +123,17 @@ async function apiUnlockConversation(convId, password) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Mot de passe incorrect");
+    return data;
+}
+
+// Verifier le mot de passe du compte (pour confirmation de securite / afficher les cles)
+async function apiVerifyAccountPassword(password) {
+    const res = await fetch(`${API_BASE}/verify-password`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ password })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Mot de passe du compte incorrect");
     return data;
 }
