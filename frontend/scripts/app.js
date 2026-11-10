@@ -18,7 +18,9 @@ import {
     renderConversationList,
     updateChatHeader,
     setActiveSidebarConversation,
-    hideWelcomeScreen
+    hideWelcomeScreen,
+    openMobileChat,
+    closeMobileChat
 } from './ui.js';
 import { initWebSocket } from './websocket.js';
 import {
@@ -147,12 +149,22 @@ document.addEventListener("DOMContentLoaded", async () => {
             });
         });
     }
+
+    // Sur mobile, retour à la liste des discussions via le bouton flèche
+    const mobileBackButton = document.getElementById("mobileBackButton");
+    if (mobileBackButton) {
+        mobileBackButton.addEventListener("click", () => {
+            closeMobileChat();
+        });
+    }
 });
 
 // Ouvre une conversation sélectionnée
 export async function openConversation(convId) {
     const nextId = parseInt(convId);
     if (isNaN(nextId)) return;
+
+    openMobileChat();
 
     // Regle de securite locale : naviguer vers une autre conversation reverrouille immediatement la precedente
     if (state.currentConversationId && state.currentConversationId !== nextId) {

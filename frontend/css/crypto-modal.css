@@ -16,6 +16,14 @@
     text-align: left;
 }
 
+.chat-status-text-mobile {
+    display: none;
+}
+
+.chat-status-text-full {
+    display: inline;
+}
+
 .chat-status-btn:hover {
     background: rgba(139, 92, 246, 0.22);
     border-color: var(--purple);
@@ -256,5 +264,187 @@
     background: #10b981;
     border-color: #10b981;
     color: #fff;
+}
+
+/* Responsive mobile pour l'état de connexion & chiffrement */
+@media (max-width: 768px) {
+    .chat-status-text-full {
+        display: none !important;
+    }
+
+    .chat-status-text-mobile {
+        display: inline !important;
+    }
+
+    .chat-status-btn {
+        padding: 3px 8px;
+        font-size: 11px;
+        gap: 5px;
+        max-width: none;
+        white-space: nowrap;
+    }
+
+    .modal-card-large {
+        width: calc(100% - 16px);
+        max-width: 480px;
+        max-height: 90vh;
+        margin: 8px auto;
+        padding: 16px 14px;
+        border-radius: 14px;
+    }
+
+    .modal-card-large .modal-header h3 {
+        font-size: 15px;
+        font-weight: 700;
+        line-height: 1.3;
+    }
+
+    .modal-card-large .modal-subtitle {
+        font-size: 11px;
+        color: var(--muted);
+        margin-top: 3px;
+        line-height: 1.35;
+    }
+
+    .modal-body-scrollable {
+        padding-right: 2px;
+        gap: 12px;
+    }
+
+    .crypto-section {
+        padding: 12px 10px;
+        border-radius: 10px;
+        gap: 10px;
+        background: #121520;
+        border: 1px solid var(--border);
+    }
+
+    .crypto-section-title {
+        font-size: 11.5px;
+        letter-spacing: 0.5px;
+        font-weight: 700;
+        color: #c4b5fd;
+    }
+
+    .crypto-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .crypto-card {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        padding: 10px 12px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        gap: 5px;
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    .crypto-card-label {
+        font-size: 11px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        font-weight: 600;
+    }
+
+    .crypto-card-value {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text);
+        text-align: left;
+        word-break: break-word;
+        font-family: inherit;
+        max-width: 100%;
+    }
+
+    .status-badge {
+        font-size: 11.5px;
+        padding: 4px 10px;
+        border-radius: 6px;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        max-width: 100%;
+        box-sizing: border-box;
+        word-break: break-word;
+        white-space: normal;
+    }
+
+    .keys-auth-box {
+        padding: 12px;
+        gap: 8px;
+    }
+
+    .keys-auth-desc {
+        font-size: 11px;
+        line-height: 1.4;
+    }
+
+    .keys-auth-row {
+        flex-direction: column;
+        gap: 8px;
+        align-items: stretch;
+    }
+
+    .keys-auth-row input {
+        width: 100%;
+        font-size: 13px;
+        padding: 10px 12px;
+    }
+
+    .keys-auth-row .auth-button {
+        width: 100%;
+        padding: 10px;
+        font-size: 13px;
+    }
+
+    .key-item {
+        padding: 10px;
+        gap: 6px;
+    }
+
+    .key-item-header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+    }
+
+    .key-item-title {
+        font-size: 12px;
+        font-weight: 600;
+    }
+
+    .key-badge-danger {
+        font-size: 10px;
+        padding: 2px 6px;
+    }
+
+    .copy-key-btn {
+        padding: 4px 8px;
+        font-size: 10.5px;
+    }
+
+    .key-item-sub {
+        font-size: 10.5px;
+        line-height: 1.35;
+        color: var(--muted);
+    }
+
+    .key-code-block {
+        font-size: 10px;
+        padding: 8px;
+        max-height: 85px;
+        line-height: 1.4;
+        word-break: break-all;
+        white-space: pre-wrap;
+    }
 }
 

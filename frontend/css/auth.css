@@ -168,6 +168,20 @@
     color: #6ee7b7;
 }
 
+.auth-back {
+    display: block;
+    text-align: center;
+    margin-top: 24px;
+    font-size: 13px;
+    color: #9292a4;
+    text-decoration: none;
+    transition: color 0.15s;
+}
+
+.auth-back:hover {
+    color: #ffffff;
+}
+
 @media (max-width: 480px) {
     .auth-card {
         padding: 24px;

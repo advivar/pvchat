@@ -214,6 +214,16 @@ export function scrollToBottom() {
     if (zone) zone.scrollTop = zone.scrollHeight;
 }
 
+export function openMobileChat() {
+    const app = document.querySelector(".app");
+    if (app) app.classList.add("mobile-chat-open");
+}
+
+export function closeMobileChat() {
+    const app = document.querySelector(".app");
+    if (app) app.classList.remove("mobile-chat-open");
+}
+
 export function showWelcomeScreen() {
     const welcome = document.getElementById("welcomeScreen");
     const unlock = document.getElementById("chatUnlockScreen");
@@ -224,6 +234,7 @@ export function showWelcomeScreen() {
         messages.style.display = "none";
         messages.innerHTML = "";
     }
+    closeMobileChat();
 }
 
 export function hideWelcomeScreen() {
