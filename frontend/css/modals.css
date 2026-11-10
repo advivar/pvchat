@@ -308,3 +308,40 @@
     color: #fde68a;
 }
 
+@media (max-width: 768px) {
+    .status-box {
+        padding: 12px 10px;
+    }
+
+    .status-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .status-item {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 10px;
+        background: var(--panel);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        border-radius: 8px;
+        gap: 8px;
+    }
+
+    .status-label {
+        font-size: 11px;
+        color: var(--muted);
+        text-transform: none;
+        letter-spacing: normal;
+        flex-shrink: 0;
+    }
+
+    .status-value {
+        font-size: 12px;
+        text-align: right;
+    }
+}
+
