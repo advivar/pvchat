@@ -23,16 +23,23 @@ app.set('trust proxy', 1);
 app.use(express.json({ limit: '1mb' }));
 
 // Configuration CORS securisee
-const allowedOrigins = process.env.CORS_ORIGIN
-    ? process.env.CORS_ORIGIN.split(',').map(s => s.trim())
-    : ['http://localhost:9080', 'http://127.0.0.1:9080'];
+const isAllowedOrigin = (origin) => {
+    if (!origin || origin === 'null') return true;
+    if (process.env.CORS_ORIGIN) {
+        const allowed = process.env.CORS_ORIGIN.split(',').map(s => s.trim());
+        if (allowed.includes(origin)) return true;
+    }
+    // Autoriser tout port local de developpement (Docker 8080/9080, LiveServer 5500, direct 3000, etc.)
+    const localRegex = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+    return localRegex.test(origin);
+};
 
 app.use(cors({
     origin: (origin, callback) => {
-        // Autoriser les requetes sans origin (reverse-proxy Nginx local, curl, tests)
-        if (!origin || allowedOrigins.includes(origin)) {
+        if (isAllowedOrigin(origin)) {
             callback(null, true);
         } else {
+            console.warn(`[CORS] Origine bloquee : ${origin}`);
             callback(new Error('Non autorise par la politique CORS'));
         }
     },
@@ -43,6 +50,14 @@ app.use(cors({
 app.use('/', authRoutes);
 app.use('/users', userRoutes);
 app.use('/conversations', conversationRoutes);
+
+// Gestionnaire d'erreur global (empeche les fuites de stack trace)
+app.use((err, req, res, next) => {
+    console.error('[ERREUR]', err.message || err);
+    res.status(err.status || 500).json({
+        error: err.message || 'Une erreur interne est survenue.'
+    });
+});
 
 // Creation du serveur HTTP et attachement du WebSocket
 const server = http.createServer(app);

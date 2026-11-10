@@ -1,0 +1,239 @@
+/* Barre latérale, logo, navigation et profil utilisateur */
+
+.sidebar {
+    display: flex;
+    flex-direction: column;
+    width: 290px;
+    flex-shrink: 0;
+    padding: 22px 15px 15px;
+    background: var(--sidebar);
+    border-right: 1px solid var(--border);
+}
+
+.logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 0 5px 35px;
+}
+
+.logo-icon {
+    display: grid;
+    place-items: center;
+    width: 42px;
+    height: 42px;
+    border-radius: 13px;
+    background: linear-gradient(135deg, #8b5cf6, #5b21b6);
+}
+
+.logo h1 {
+    font-size: 22px;
+    letter-spacing: 2px;
+}
+
+.sidebar-title {
+    margin: 0 5px 12px;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: bold;
+    letter-spacing: 1.5px;
+}
+
+.search {
+    width: 100%;
+    padding: 12px;
+    margin-bottom: 18px;
+    color: var(--text);
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    outline: none;
+}
+
+.search::placeholder {
+    color: var(--muted);
+}
+
+.conversation-list {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    overflow-y: auto;
+}
+
+.conversation {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    width: 100%;
+    padding: 12px 9px;
+    text-align: left;
+    background: transparent;
+    border: 0;
+    border-radius: 11px;
+    cursor: pointer;
+}
+
+.conversation:hover {
+    background: var(--hover);
+}
+
+.conversation.active {
+    background: #28203f;
+    box-shadow: inset 3px 0 var(--purple);
+}
+
+/* Couleurs des avatars par initiales */
+.avatar {
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.purple {
+    background: #493477;
+    color: #d8c7ff;
+}
+
+.blue {
+    background: #203e69;
+    color: #a9d2ff;
+}
+
+.green {
+    background: #1e4b3a;
+    color: #a7f3d0;
+}
+
+.orange {
+    background: #633d25;
+    color: #fed7aa;
+}
+
+.conversation-info {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+    flex: 1;
+}
+
+.conversation-info strong {
+    font-size: 13px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.conversation-info small {
+    overflow: hidden;
+    color: var(--muted);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Bouton parametre (engrenage) au survol de la conversation */
+.conv-item-settings-btn {
+    margin-left: auto;
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 14px;
+    display: grid;
+    place-items: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s, background 0.15s, color 0.15s;
+    flex-shrink: 0;
+    cursor: pointer;
+}
+
+.conversation:hover .conv-item-settings-btn {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.conv-item-settings-btn:hover {
+    background: #2f2747;
+    color: #ffffff;
+    border-color: var(--purple);
+}
+
+.new-conversation {
+    margin-top: 18px;
+    padding: 13px;
+    color: #c4b5fd;
+    background: transparent;
+    border: 1px dashed #49415f;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.new-conversation:hover {
+    background: var(--hover);
+}
+
+.profile {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: auto;
+    padding-top: 15px;
+    border-top: 1px solid var(--border);
+}
+
+.profile-info {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    gap: 5px;
+    font-size: 12px;
+}
+
+.profile-info small {
+    color: var(--muted);
+    font-size: 10px;
+}
+
+.logout-button {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 12px;
+    color: var(--muted);
+    font-size: 13px;
+    cursor: pointer;
+    transition: 0.15s;
+    white-space: nowrap;
+}
+
+.logout-button:hover {
+    color: #ef4444;
+    border-color: #ef4444;
+}
+
+.auth-actions {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+}
+
+.empty-list-notice {
+    padding: 20px 10px;
+    color: var(--muted);
+    font-size: 13px;
+    text-align: center;
+    line-height: 1.6;
+}
+

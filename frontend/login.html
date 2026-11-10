@@ -47,53 +47,9 @@
         </p>
     </main>
 
-<script>
-    const formMessage = document.getElementById("formMessage");
-    const submitBtn = document.getElementById("submitBtn");
-
-    function showMessage(text, isError) {
-        formMessage.textContent = text;
-        formMessage.className = "form-message " + (isError ? "form-message-error" : "form-message-success");
-        formMessage.hidden = false;
-    }
-
-    document.getElementById("login-form").addEventListener("submit", async function(event) {
-        event.preventDefault();
-
-        const username = document.getElementById("username").value.trim();
-        const password = document.getElementById("password").value;
-
-        submitBtn.disabled = true;
-        submitBtn.textContent = "Connexion...";
-
-        try {
-            const response = await fetch('/api/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, password })
-            });
-
-            const data = await response.json();
-
-            if (response.ok) {
-                localStorage.setItem('pvchat_token', data.token);
-                localStorage.setItem('pvchat_username', data.user.username);
-                if (data.user && (data.user.id || data.user.userId)) {
-                    localStorage.setItem('pvchat_user_id', data.user.id || data.user.userId);
-                }
-                showMessage("Connexion réussie ! Redirection...", false);
-                setTimeout(() => window.location.href = "index.html", 800);
-            } else {
-                showMessage(data.error || "Identifiants incorrects.", true);
-                submitBtn.disabled = false;
-                submitBtn.textContent = "Se connecter";
-            }
-        } catch (err) {
-            showMessage("Impossible de contacter le serveur. Vérifiez votre connexion.", true);
-            submitBtn.disabled = false;
-            submitBtn.textContent = "Se connecter";
-        }
-    });
+<script type="module">
+    import { initLoginForm } from './scripts/auth-forms.js';
+    initLoginForm();
 </script>
 
 </body>

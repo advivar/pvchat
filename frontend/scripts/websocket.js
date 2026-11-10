@@ -3,7 +3,7 @@
 let socket = null;
 let _wsCallbacks = { onNewMessage: null, onWsEvent: null };
 
-function initWebSocket(currentUser, conversations, onNewMessage, onWsEvent) {
+export function initWebSocket(currentUser, conversations, onNewMessage, onWsEvent) {
     const token = localStorage.getItem("pvchat_token");
     if (!token) return;
 
@@ -17,8 +17,6 @@ function initWebSocket(currentUser, conversations, onNewMessage, onWsEvent) {
     }
 
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    // Note : le token est passe en query string car les WebSockets ne supportent pas les headers HTTP custom.
-    // Cette limitation est inherente au protocole WebSocket (RFC 6455).
     const wsUrl = `${protocol}//${window.location.host}/ws?token=${encodeURIComponent(token)}`;
 
     socket = new WebSocket(wsUrl);
@@ -53,14 +51,14 @@ function initWebSocket(currentUser, conversations, onNewMessage, onWsEvent) {
     socket.onerror = () => {};
 }
 
-function closeWebSocket() {
+export function closeWebSocket() {
     if (socket) {
         socket.close();
         socket = null;
     }
 }
 
-function getWebSocketStatus() {
+export function getWebSocketStatus() {
     if (!socket) return "Déconnecté 🔴";
     switch (socket.readyState) {
         case WebSocket.OPEN: return "Connecté en temps réel 🟢";

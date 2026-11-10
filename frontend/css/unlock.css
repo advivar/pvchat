@@ -1,0 +1,125 @@
+/* Écran de déverrouillage inline de conversation et bouton de verrouillage */
+
+.chat-unlock-screen {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    min-height: 380px;
+    padding: 24px;
+    background: radial-gradient(circle at center, rgba(139, 92, 246, 0.08) 0%, transparent 70%);
+}
+
+.unlock-panel-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    max-width: 440px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px 28px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+    text-align: center;
+    animation: fadeIn 0.25s ease-out;
+}
+
+.unlock-panel-icon {
+    font-size: 46px;
+    margin-bottom: 14px;
+    filter: drop-shadow(0 4px 12px rgba(139, 92, 246, 0.35));
+}
+
+.unlock-panel-card h3 {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 8px;
+}
+
+.unlock-panel-desc {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--muted);
+    margin-bottom: 22px;
+}
+
+.unlock-form-box {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.unlock-input-container {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+}
+
+.unlock-input-container input {
+    width: 100%;
+    padding-right: 42px;
+    font-size: 14px;
+}
+
+.unlock-pwd-toggle {
+    position: absolute;
+    right: 10px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    opacity: 0.65;
+    transition: opacity 0.2s;
+    padding: 4px;
+}
+
+.unlock-pwd-toggle:hover {
+    opacity: 1;
+}
+
+.unlock-panel-error {
+    font-size: 13px;
+    color: #f87171;
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    border-radius: 8px;
+    padding: 8px 12px;
+    text-align: left;
+    margin: 0;
+}
+
+.unlock-panel-btn {
+    width: 100%;
+    margin-top: 4px;
+    padding: 12px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+/* Bouton Verrouiller dans le chat header */
+.lock-conv-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(139, 92, 246, 0.15);
+    border: 1px solid rgba(139, 92, 246, 0.4);
+    color: #c4b5fd;
+    padding: 7px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.lock-conv-button:hover {
+    background: rgba(139, 92, 246, 0.3);
+    border-color: #8b5cf6;
+    color: #fff;
+}
+

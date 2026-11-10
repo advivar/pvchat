@@ -1,7 +1,7 @@
 // Fonctions de chiffrement E2EE (ECDH P-256 + AES-GCM-256)
 
 // Encodage ArrayBuffer vers Base64 robuste (sans depassement de pile)
-function arrayBufferToBase64(buffer) {
+export function arrayBufferToBase64(buffer) {
     const bytes = new Uint8Array(buffer);
     let binary = "";
     const len = bytes.byteLength;
@@ -13,7 +13,7 @@ function arrayBufferToBase64(buffer) {
 }
 
 // Decodage Base64 vers Uint8Array robuste
-function base64ToUint8Array(base64) {
+export function base64ToUint8Array(base64) {
     const binaryString = atob(base64);
     const len = binaryString.length;
     const bytes = new Uint8Array(len);
@@ -24,7 +24,7 @@ function base64ToUint8Array(base64) {
 }
 
 // Generer une paire de cles ECDH pour l'utilisateur
-async function generateKeyPair() {
+export async function generateKeyPair() {
     return await window.crypto.subtle.generateKey(
         { name: "ECDH", namedCurve: "P-256" },
         true,
@@ -33,13 +33,13 @@ async function generateKeyPair() {
 }
 
 // Exporter la cle publique en Base64 (format SPKI)
-async function exportPublicKey(key) {
+export async function exportPublicKey(key) {
     const exported = await window.crypto.subtle.exportKey("spki", key);
     return arrayBufferToBase64(exported);
 }
 
 // Importer une cle publique Base64 (format SPKI)
-async function importPublicKey(base64Key) {
+export async function importPublicKey(base64Key) {
     const binaryDer = base64ToUint8Array(base64Key);
     return await window.crypto.subtle.importKey(
         "spki",
@@ -51,19 +51,19 @@ async function importPublicKey(base64Key) {
 }
 
 // Exporter la cle privee en Base64 (format PKCS#8)
-async function exportPrivateKey(key) {
+export async function exportPrivateKey(key) {
     const exported = await window.crypto.subtle.exportKey("pkcs8", key);
     return arrayBufferToBase64(exported);
 }
 
 // Exporter une cle symetrique en Base64 brut (pour affichage / diagnostic)
-async function exportRawKey(key) {
+export async function exportRawKey(key) {
     const exported = await window.crypto.subtle.exportKey("raw", key);
     return arrayBufferToBase64(exported);
 }
 
 // Deriver la cle partagee AES-GCM-256 par echange ECDH
-async function deriveSharedKey(privateKey, publicKey) {
+export async function deriveSharedKey(privateKey, publicKey) {
     return await window.crypto.subtle.deriveKey(
         { name: "ECDH", public: publicKey },
         privateKey,
@@ -74,7 +74,7 @@ async function deriveSharedKey(privateKey, publicKey) {
 }
 
 // Verifie mathematiquement que la cle privee locale correspond a la cle publique distante
-async function verifyKeyPair(privateKey, publicBase64Key) {
+export async function verifyKeyPair(privateKey, publicBase64Key) {
     if (!privateKey || !publicBase64Key) return false;
     try {
         const pubKey = await importPublicKey(publicBase64Key);
@@ -104,7 +104,7 @@ async function verifyKeyPair(privateKey, publicBase64Key) {
 }
 
 // Detecte si une chaine est un payload chiffre valide { ciphertext, iv }
-function isEncryptedPayload(data) {
+export function isEncryptedPayload(data) {
     if (typeof data !== "string") return false;
     const trimmed = data.trim();
     if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return false;
@@ -124,7 +124,7 @@ function isEncryptedPayload(data) {
 }
 
 // Chiffrer un texte avec une cle AES-GCM (retourne JSON { ciphertext, iv })
-async function encryptMessage(text, key) {
+export async function encryptMessage(text, key) {
     const encoder = new TextEncoder();
     const data = encoder.encode(text);
     const iv = window.crypto.getRandomValues(new Uint8Array(12));
@@ -143,7 +143,7 @@ async function encryptMessage(text, key) {
 
 // Dechiffrer un payload JSON { ciphertext, iv } avec une cle AES-GCM
 // Leve une exception si le dechiffrement echoue
-async function decryptMessage(encryptedJsonString, key) {
+export async function decryptMessage(encryptedJsonString, key) {
     if (!encryptedJsonString) return "";
     if (!isEncryptedPayload(encryptedJsonString)) return encryptedJsonString;
 
@@ -163,7 +163,7 @@ async function decryptMessage(encryptedJsonString, key) {
 // Dechiffre un message de conversation en E2EE pur.
 // Tous les messages transites sont chiffres exclusivement avec sharedKey (ECDH).
 // Le mot de passe de discussion est un verrouillage d'acces local dans l'interface.
-async function decryptConversationMessage(rawContent, sharedKey) {
+export async function decryptConversationMessage(rawContent, sharedKey) {
     // Message en clair (aucun payload chiffre detecte)
     if (!rawContent || !isEncryptedPayload(rawContent)) {
         return rawContent;
@@ -171,39 +171,54 @@ async function decryptConversationMessage(rawContent, sharedKey) {
 
     // Pas encore de cle partagee derivee (contact sans cle publique enregistree)
     if (!sharedKey) {
-        return "⚠️ [En attente de la clé de chiffrement]";
+        return "🔒 [En attente de la clé de chiffrement]";
     }
 
     try {
         const decrypted = await decryptMessage(rawContent, sharedKey);
         // Si le message est encore un payload chiffre (reliquat d'ancien sur-chiffrement)
         if (isEncryptedPayload(decrypted)) {
-            return "⚠️ [Message archivé protégé]";
+            return "🔒 [Message archivé protégé]";
         }
         return decrypted;
-    } catch (err) {
-        console.warn("Echec du dechiffrement E2EE :", err);
-        return "⚠️ [Message chiffré - Impossible de déchiffrer]";
+    } catch {
+        // Le dechiffrement echoue si le message provient d'une session anterieure dont la cle a change
+        return "🔒 [Message chiffré - Session précédente]";
     }
 }
 
-// Sauvegarder la cle privee ECDH dans localStorage (scopee par userId)
-async function storePrivateKey(privateKey, userId) {
+// Sauvegarder la paire de cles ECDH complete dans localStorage (scopee strictement par userId)
+export async function storeLocalKeyPair(keyPair, userId) {
+    if (!keyPair || !userId) return;
+    const privB64 = await exportPrivateKey(keyPair.privateKey);
+    const pubB64 = await exportPublicKey(keyPair.publicKey);
+    localStorage.setItem(`pvchat_private_key_${userId}`, privB64);
+    localStorage.setItem(`pvchat_public_key_${userId}`, pubB64);
+}
+
+// Sauvegarder la cle privee ECDH dans localStorage (scopee strictement par userId)
+export async function storePrivateKey(privateKey, userId) {
+    if (!privateKey || !userId) return;
     const exported = await exportPrivateKey(privateKey);
-    const keyName = userId ? `pvchat_private_key_${userId}` : "pvchat_private_key";
-    localStorage.setItem(keyName, exported);
+    localStorage.setItem(`pvchat_private_key_${userId}`, exported);
 }
 
-// Charger la cle privee ECDH depuis localStorage
-async function getLocalPrivateKey(userId) {
-    let stored = userId ? localStorage.getItem(`pvchat_private_key_${userId}`) : null;
-    if (!stored) {
-        // Fallbacks pour recuperer d'anciennes cles locales
-        stored = localStorage.getItem("pvchat_private_key_undefined") || localStorage.getItem("pvchat_private_key");
-        if (stored && userId) {
-            localStorage.setItem(`pvchat_private_key_${userId}`, stored);
-        }
-    }
+// Sauvegarder la cle publique ECDH dans localStorage (scopee strictement par userId)
+export function storeLocalPublicKey(pubBase64, userId) {
+    if (!pubBase64 || !userId) return;
+    localStorage.setItem(`pvchat_public_key_${userId}`, pubBase64);
+}
+
+// Charger la cle publique locale enregistree pour un utilisateur
+export function getLocalPublicKey(userId) {
+    if (!userId) return null;
+    return localStorage.getItem(`pvchat_public_key_${userId}`) || null;
+}
+
+// Charger la cle privee ECDH depuis localStorage (strictement scopee par userId)
+export async function getLocalPrivateKey(userId) {
+    if (!userId) return null;
+    const stored = localStorage.getItem(`pvchat_private_key_${userId}`);
     if (!stored) return null;
 
     try {
@@ -219,4 +234,14 @@ async function getLocalPrivateKey(userId) {
         console.error("Erreur importation cle privee locale :", e);
         return null;
     }
+}
+
+// Nettoyer les cles orphelines non-scopees issues des anciennes versions pour eviter les collisions entre comptes
+export function cleanupLegacyKeys() {
+    try {
+        localStorage.removeItem("pvchat_private_key");
+        localStorage.removeItem("pvchat_private_key_undefined");
+        localStorage.removeItem("pvchat_public_key");
+        localStorage.removeItem("pvchat_public_key_undefined");
+    } catch {}
 }

@@ -1,8 +1,8 @@
-// Toutes les fonctions qui parlent avec l'API backend
+// Toutes les fonctions qui communiquent avec l'API backend
 
 const API_BASE = "/api";
 
-function authHeaders() {
+export function authHeaders() {
     const token = localStorage.getItem("pvchat_token");
     return {
         "Content-Type": "application/json",
@@ -10,7 +10,7 @@ function authHeaders() {
     };
 }
 
-async function apiGetMe() {
+export async function apiGetMe() {
     const res = await fetch(`${API_BASE}/me`, { headers: authHeaders() });
     if (!res.ok) return null;
     const data = await res.json();
@@ -22,7 +22,7 @@ async function apiGetMe() {
     return null;
 }
 
-async function apiGetConversations() {
+export async function apiGetConversations() {
     const res = await fetch(`${API_BASE}/conversations`, { headers: authHeaders() });
     if (res.status === 401) {
         localStorage.removeItem("pvchat_token");
@@ -32,7 +32,7 @@ async function apiGetConversations() {
     return await res.json();
 }
 
-async function apiCreateConversation(targetUserId) {
+export async function apiCreateConversation(targetUserId) {
     const res = await fetch(`${API_BASE}/conversations`, {
         method: "POST",
         headers: authHeaders(),
@@ -43,13 +43,13 @@ async function apiCreateConversation(targetUserId) {
     return data.conversation;
 }
 
-async function apiGetMessages(convId) {
+export async function apiGetMessages(convId) {
     const res = await fetch(`${API_BASE}/conversations/${convId}/messages`, { headers: authHeaders() });
     if (!res.ok) return [];
     return await res.json();
 }
 
-async function apiSendMessage(convId, content) {
+export async function apiSendMessage(convId, content) {
     const res = await fetch(`${API_BASE}/conversations/${convId}/messages`, {
         method: "POST",
         headers: authHeaders(),
@@ -60,7 +60,7 @@ async function apiSendMessage(convId, content) {
     return data;
 }
 
-async function apiSearchUsers(query) {
+export async function apiSearchUsers(query) {
     const token = localStorage.getItem("pvchat_token");
     const res = await fetch(`${API_BASE}/users/search?q=${encodeURIComponent(query)}`, {
         headers: { "Authorization": `Bearer ${token}` }
@@ -70,7 +70,7 @@ async function apiSearchUsers(query) {
 }
 
 // Enregistrer la cle publique E2EE sur le serveur
-async function apiSavePublicKey(publicKey) {
+export async function apiSavePublicKey(publicKey) {
     const res = await fetch(`${API_BASE}/users/me/public-key`, {
         method: "PUT",
         headers: authHeaders(),
@@ -82,7 +82,7 @@ async function apiSavePublicKey(publicKey) {
 }
 
 // Recuperer la cle publique E2EE d'un autre utilisateur
-async function apiGetUserPublicKey(userId) {
+export async function apiGetUserPublicKey(userId) {
     const res = await fetch(`${API_BASE}/users/${userId}/public-key`, {
         headers: authHeaders()
     });
@@ -92,7 +92,7 @@ async function apiGetUserPublicKey(userId) {
 }
 
 // Supprimer (masquer) une conversation de son compte
-async function apiDeleteConversation(convId) {
+export async function apiDeleteConversation(convId) {
     const res = await fetch(`${API_BASE}/conversations/${convId}`, {
         method: "DELETE",
         headers: authHeaders()
@@ -103,7 +103,7 @@ async function apiDeleteConversation(convId) {
 }
 
 // Definir, modifier ou supprimer le mot de passe d'une conversation
-async function apiSetConversationPassword(convId, password, currentPassword) {
+export async function apiSetConversationPassword(convId, password, currentPassword) {
     const res = await fetch(`${API_BASE}/conversations/${convId}/password`, {
         method: "PUT",
         headers: authHeaders(),
@@ -115,7 +115,7 @@ async function apiSetConversationPassword(convId, password, currentPassword) {
 }
 
 // Deverrouiller une conversation protegee par mot de passe
-async function apiUnlockConversation(convId, password) {
+export async function apiUnlockConversation(convId, password) {
     const res = await fetch(`${API_BASE}/conversations/${convId}/unlock`, {
         method: "POST",
         headers: authHeaders(),
@@ -127,7 +127,7 @@ async function apiUnlockConversation(convId, password) {
 }
 
 // Verifier le mot de passe du compte (pour confirmation de securite / afficher les cles)
-async function apiVerifyAccountPassword(password) {
+export async function apiVerifyAccountPassword(password) {
     const res = await fetch(`${API_BASE}/verify-password`, {
         method: "POST",
         headers: authHeaders(),
