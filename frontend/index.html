@@ -6,11 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PVCHAT - Messagerie sécurisée</title>
     <link rel="stylesheet" href="style.css">
-    <script src="scripts/crypto.js" defer></script>
-    <script src="scripts/api.js" defer></script>
-    <script src="scripts/ui.js" defer></script>
-    <script src="scripts/websocket.js" defer></script>
-    <script src="scripts/app.js" defer></script>
+    <script type="module" src="scripts/app.js"></script>
 </head>
 
 <body>
@@ -49,11 +45,12 @@
                     </div>
                 </div>
                 <div class="header-actions">
+                    <button id="lockConvBtn" class="lock-conv-button" title="Verrouiller cette discussion" style="display: none;">🔒 Verrouiller</button>
                     <button id="infoButton" class="info-button" title="Informations sur le projet et la connexion">ⓘ</button>
                 </div>
             </header>
 
-            <section id="messages" class="messages">
+            <div class="chat-content-area">
                 <div id="welcomeScreen" class="welcome-screen">
                     <div class="welcome-icon">🔒</div>
                     <h2>Bienvenue sur PVCHAT</h2>
@@ -67,7 +64,29 @@
                         Voir le projet sur GitHub
                     </a>
                 </div>
-            </section>
+
+                <!-- Ecran integre de deverrouillage (remplace les bulles du chat) -->
+                <div id="chatUnlockScreen" class="chat-unlock-screen" style="display: none;">
+                    <div class="unlock-panel-card">
+                        <div class="unlock-panel-icon">🔒</div>
+                        <h3>Discussion protégée</h3>
+                        <p class="unlock-panel-desc">
+                            Cette conversation est verrouillée par un mot de passe. Saisissez-le pour déchiffrer et afficher les messages :
+                        </p>
+                        <div class="unlock-form-box">
+                            <div class="unlock-input-container">
+                                <input type="password" id="inlineUnlockPassword" class="search" placeholder="Mot de passe de la discussion..." autocomplete="off">
+                                <button type="button" id="inlineUnlockToggleBtn" class="unlock-pwd-toggle" title="Afficher/masquer">👁️</button>
+                            </div>
+                            <p id="inlineUnlockError" class="unlock-panel-error" style="display: none;"></p>
+                            <button type="button" id="inlineUnlockBtn" class="auth-button unlock-panel-btn">Déverrouiller la discussion</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Zone autonome des bulles de messages -->
+                <section id="messages" class="messages" style="display: none;"></section>
+            </div>
 
             <footer class="composer">
                 <div class="composer-box">
@@ -122,74 +141,139 @@
         </div>
     </div>
 
-    <!-- Modale Detail Connexion & Chiffrement E2EE -->
+    <!-- Modale Detail Connexion & Chiffrement E2EE (Spacieuse & Complete) -->
     <div id="cryptoStatusModal" class="modal-overlay" hidden>
-        <div class="modal-card" style="max-width: 520px;">
+        <div class="modal-card modal-card-large">
             <div class="modal-header">
-                <h3>État de la connexion et du chiffrement</h3>
+                <div>
+                    <h3>État de la connexion et du chiffrement</h3>
+                    <p class="modal-subtitle">Diagnostic temps réel et sécurité cryptographique de bout en bout</p>
+                </div>
                 <button id="closeCryptoStatusModal" class="modal-close">&times;</button>
             </div>
-            <div class="modal-body">
-                <!-- Section 1 : Connexion Serveur -->
-                <div class="status-box" style="margin-bottom: 14px;">
-                    <h4 style="font-size: 13px; margin-bottom: 8px; color: var(--text);">🌐 Connexion au serveur</h4>
-                    <div class="status-grid">
-                        <div class="status-item">
-                            <span class="status-label">Hôte / Domaine :</span>
-                            <span id="statusDomain" class="status-value">--</span>
+            <div class="modal-body modal-body-scrollable">
+                <!-- Section 1 : Connexion Réseau & Serveur -->
+                <div class="crypto-section">
+                    <h4 class="crypto-section-title">
+                        <span>🌐</span> Connexion réseau & serveur
+                    </h4>
+                    <div class="crypto-grid">
+                        <div class="crypto-card">
+                            <span class="crypto-card-label">Hôte / Domaine</span>
+                            <span id="statusDomain" class="crypto-card-value">--</span>
                         </div>
-                        <div class="status-item">
-                            <span class="status-label">Protocole Web :</span>
-                            <span id="statusHttpProto" class="status-value">--</span>
+                        <div class="crypto-card">
+                            <span class="crypto-card-label">Protocole Web</span>
+                            <span id="statusHttpProto" class="crypto-card-value">--</span>
                         </div>
-                        <div class="status-item">
-                            <span class="status-label">Flux temps réel :</span>
-                            <span id="statusWsProto" class="status-value">--</span>
+                        <div class="crypto-card">
+                            <span class="crypto-card-label">Flux temps réel</span>
+                            <span id="statusWsProto" class="crypto-card-value">--</span>
                         </div>
-                        <div class="status-item">
-                            <span class="status-label">État du flux :</span>
+                        <div class="crypto-card">
+                            <span class="crypto-card-label">État du WebSocket</span>
                             <span id="statusWsState" class="status-badge status-badge-ok">Connecté 🟢</span>
                         </div>
                     </div>
                 </div>
 
-                <!-- Section 2 : Chiffrement E2EE -->
-                <div class="status-box">
-                    <h4 style="font-size: 13px; margin-bottom: 8px; color: var(--text);">🔒 Chiffrement de bout en bout (E2EE)</h4>
-                    <div class="status-grid">
-                        <div class="status-item">
-                            <span class="status-label">Algorithme d'échange :</span>
-                            <span class="status-value">ECDH (Courbe P-256)</span>
+                <!-- Section 2 : Chiffrement E2EE de la discussion -->
+                <div class="crypto-section">
+                    <h4 class="crypto-section-title">
+                        <span>🔒</span> Chiffrement de bout en bout (E2EE)
+                    </h4>
+                    <div class="crypto-grid">
+                        <div class="crypto-card">
+                            <span class="crypto-card-label">Discussion active</span>
+                            <span id="statusActiveContact" class="crypto-card-value">Sélectionnez une discussion</span>
                         </div>
-                        <div class="status-item">
-                            <span class="status-label">Chiffrement symétrique :</span>
-                            <span class="status-value">AES-GCM (256 bits)</span>
+                        <div class="crypto-card">
+                            <span class="crypto-card-label">Échange de clés</span>
+                            <span class="crypto-card-value">ECDH (Courbe NIST P-256)</span>
                         </div>
-                        <div class="status-item">
-                            <span class="status-label">Clé privée locale :</span>
-                            <span class="status-badge status-badge-ok">Présente (sécurisée dans le client)</span>
+                        <div class="crypto-card">
+                            <span class="crypto-card-label">Chiffrement symétrique</span>
+                            <span class="crypto-card-value">AES-GCM (256 bits, IV 96 bits)</span>
                         </div>
-                        <div class="status-item">
-                            <span class="status-label">Clé publique contact :</span>
-                            <span id="statusTargetPubKey" class="status-badge status-badge-ok">Vérifiée et active 🟢</span>
-                        </div>
-                        <div class="status-item">
-                            <span class="status-label">Clé secrète partagée :</span>
+                        <div class="crypto-card">
+                            <span class="crypto-card-label">Clé secrète partagée</span>
                             <span id="statusSharedKey" class="status-badge status-badge-ok">Dérivée pour cette session 🔑</span>
                         </div>
-                        <div class="status-item">
-                            <span class="status-label">Protection par mot de passe :</span>
-                            <span id="statusPasswordLock" class="status-value">Désactivée</span>
+                        <div class="crypto-card">
+                            <span class="crypto-card-label">Clé publique contact</span>
+                            <span id="statusTargetPubKey" class="status-badge status-badge-ok">Vérifiée et active 🟢</span>
                         </div>
-                        <div class="status-item" style="grid-column: 1 / -1;">
-                            <span class="status-label">Sécurité serveur :</span>
-                            <span class="status-value" style="color: #a7f3d0;">Zero Knowledge — Le serveur PostgreSQL ne stocke aucun texte en clair.</span>
+                        <div class="crypto-card">
+                            <span class="crypto-card-label">Protection par mot de passe</span>
+                            <span id="statusPasswordLock" class="crypto-card-value">Désactivée</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 3 : Inspection des clés cryptographiques -->
+                <div class="crypto-section">
+                    <div class="crypto-section-header-flex">
+                        <h4 class="crypto-section-title" style="margin-bottom: 0;">
+                            <span>🔑</span> Clés cryptographiques utilisées
+                        </h4>
+                        <button type="button" id="hideKeysBtn" class="auth-btn auth-btn-secondary btn-sm" style="display: none;">Masquer les clés 🔒</button>
+                    </div>
+
+                    <!-- Etape 1 : Demande de mot de passe du compte -->
+                    <div id="keysAuthGate" class="keys-auth-box">
+                        <p class="keys-auth-desc">
+                            Pour afficher les clés cryptographiques de session et votre clé privée locale, veuillez confirmer le mot de passe de votre compte PVCHAT :
+                        </p>
+                        <div class="keys-auth-row">
+                            <input type="password" id="cryptoAccountPassword" class="search" placeholder="Mot de passe de votre compte PVCHAT..." autocomplete="current-password">
+                            <button type="button" id="revealKeysBtn" class="auth-button" style="margin-top: 0; white-space: nowrap;">Afficher les clés 👁️</button>
+                        </div>
+                        <p id="revealKeysError" class="keys-auth-error" style="display: none;"></p>
+                    </div>
+
+                    <!-- Etape 2 : Zone d'affichage des cles (visible apres verification) -->
+                    <div id="keysDisplayArea" class="keys-display-area" style="display: none;">
+                        <div class="key-item">
+                            <div class="key-item-header">
+                                <span class="key-item-title">Ma clé publique ECDH (P-256)</span>
+                                <button type="button" class="copy-key-btn" data-copy-target="keyMyPublic">Copier 📋</button>
+                            </div>
+                            <p class="key-item-sub">Publiée sur le serveur pour permettre à vos contacts de dériver la clé partagée.</p>
+                            <pre id="keyMyPublic" class="key-code-block">--</pre>
+                        </div>
+
+                        <div class="key-item">
+                            <div class="key-item-header">
+                                <span class="key-item-title">Ma clé privée locale ECDH (P-256)</span>
+                                <span class="key-badge-danger">Strictement confidentielle</span>
+                                <button type="button" class="copy-key-btn" data-copy-target="keyMyPrivate">Copier 📋</button>
+                            </div>
+                            <p class="key-item-sub">⚠️ Stockée exclusivement dans le stockage local de votre navigateur. Ne quitte jamais votre appareil.</p>
+                            <pre id="keyMyPrivate" class="key-code-block key-code-private">--</pre>
+                        </div>
+
+                        <div class="key-item" id="keyContactPublicWrap">
+                            <div class="key-item-header">
+                                <span class="key-item-title">Clé publique du contact</span>
+                                <button type="button" class="copy-key-btn" data-copy-target="keyContactPublic">Copier 📋</button>
+                            </div>
+                            <p class="key-item-sub">Récupérée depuis le serveur pour la discussion en cours.</p>
+                            <pre id="keyContactPublic" class="key-code-block">--</pre>
+                        </div>
+
+                        <div class="key-item" id="keySharedWrap">
+                            <div class="key-item-header">
+                                <span class="key-item-title">Clé secrète partagée AES-GCM (256 bits)</span>
+                                <button type="button" class="copy-key-btn" data-copy-target="keyShared">Copier 📋</button>
+                            </div>
+                            <p class="key-item-sub">Calculée localement via ECDH. Chiffre et déchiffre les messages échangés.</p>
+                            <pre id="keyShared" class="key-code-block">--</pre>
                         </div>
                     </div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button id="closeCryptoStatusBtn" class="auth-button" style="margin-top: 15px; width: 100%;">Fermer</button>
+                <button id="closeCryptoStatusBtn" class="auth-button" style="width: 100%;">Fermer</button>
             </div>
         </div>
     </div>
@@ -229,11 +313,17 @@
                 <div class="settings-section">
                     <h4>🔒 Protection par mot de passe</h4>
                     <p style="font-size: 12px; color: var(--muted); margin: 6px 0 12px;">
-                        Verrouille cette discussion avec un mot de passe personnel. Les messages ne pourront être lus qu'après saisie du mot de passe.
+                        Verrouille cette discussion avec un mot de passe. Les messages ne pourront être lus qu'après saisie du mot de passe.
                     </p>
                     <div id="pwdStatusNotice" class="settings-status-notice" hidden></div>
+                    
                     <div class="settings-input-group">
-                        <input type="password" id="convPasswordInput" class="search" placeholder="Nouveau mot de passe (min 4 car.)...">
+                        <div id="currentPwdFieldWrap" style="margin-bottom: 8px;" hidden>
+                            <label style="font-size: 11px; color: var(--muted); display: block; margin-bottom: 4px;">Mot de passe actuel :</label>
+                            <input type="password" id="currentConvPasswordInput" class="search" placeholder="Mot de passe actuel..." autocomplete="off">
+                        </div>
+                        <label id="newPwdFieldLabel" style="font-size: 11px; color: var(--muted); display: none; margin-bottom: 4px;">Nouveau mot de passe :</label>
+                        <input type="password" id="convPasswordInput" class="search" placeholder="Mot de passe de la discussion (min 4 car.)...">
                         <div class="settings-btn-row">
                             <button id="saveConvPasswordBtn" class="auth-button" style="margin-top: 0; flex: 1;">Enregistrer</button>
                             <button id="removeConvPasswordBtn" class="danger-outline-button" style="flex: 1;" hidden>Supprimer le mot de passe</button>
@@ -242,10 +332,14 @@
 
                     <!-- Boite de confirmation integree pour suppression du mot de passe -->
                     <div id="removePwdConfirmBox" class="settings-confirm-box" hidden>
-                        <p>⚠️ Êtes-vous sûr de vouloir supprimer le mot de passe de cette discussion ?</p>
-                        <div class="settings-btn-row" style="margin-top: 8px;">
-                            <button id="cancelRemovePwdBtn" class="auth-btn auth-btn-secondary" style="flex: 1;">Annuler</button>
-                            <button id="confirmRemovePwdBtn" class="danger-button" style="flex: 1;">Confirmer la suppression</button>
+                        <p style="font-weight: 600; margin-bottom: 4px; color: #fca5a5;">⚠️ Désactiver la protection</p>
+                        <p style="font-size: 12px; color: var(--muted); margin-bottom: 8px;">
+                            Saisissez le mot de passe actuel de la discussion pour confirmer la suppression :
+                        </p>
+                        <input type="password" id="removeConvPasswordInput" class="search" placeholder="Mot de passe actuel de la discussion..." autocomplete="off">
+                        <div class="settings-btn-row" style="margin-top: 10px;">
+                            <button type="button" id="cancelRemovePwdBtn" class="auth-btn auth-btn-secondary" style="flex: 1;">Annuler</button>
+                            <button type="button" id="confirmRemovePwdBtn" class="danger-button" style="flex: 1;">Supprimer la protection</button>
                         </div>
                     </div>
                 </div>
@@ -271,27 +365,6 @@
                         </div>
                     </div>
                 </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Modale Deverrouillage Mot de Passe -->
-    <div id="unlockModal" class="modal-overlay" hidden>
-        <div class="modal-card">
-            <div class="modal-header">
-                <h3>🔒 Discussion verrouillée</h3>
-                <button id="closeUnlockModal" class="modal-close">&times;</button>
-            </div>
-            <div class="modal-body">
-                <p style="font-size: 13px; color: var(--muted); margin-bottom: 12px;">
-                    Cette discussion est protégée par un mot de passe. Saisissez-le pour accéder aux messages :
-                </p>
-                <input type="password" id="unlockPasswordInput" class="search" placeholder="Mot de passe de la discussion..." autocomplete="off">
-                <p id="unlockError" style="font-size: 12px; color: #fc8181; margin-top: 6px;" hidden></p>
-            </div>
-            <div class="modal-footer" style="display: flex; gap: 10px; margin-top: 15px;">
-                <button id="cancelUnlockBtn" class="auth-btn auth-btn-secondary" style="flex: 1;">Annuler</button>
-                <button id="confirmUnlockBtn" class="auth-button" style="flex: 1; margin-top: 0;">Déverrouiller</button>
             </div>
         </div>
     </div>

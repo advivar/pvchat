@@ -1,26 +1,28 @@
-// Gestion de l'affichage des conversations et des messages
+// Gestion de l'affichage des conversations, messages et profils
+
+import { isEncryptedPayload } from './crypto.js';
 
 const AVATAR_COLORS = ["purple", "blue", "green", "orange"];
 
-function getInitials(name) {
+export function getInitials(name) {
     if (!name) return "?";
     return name.slice(0, 2).toUpperCase();
 }
 
 // Couleur stable basee sur le nom (meme nom = meme couleur)
-function getAvatarColor(name) {
+export function getAvatarColor(name) {
     let sum = 0;
     for (let i = 0; i < name.length; i++) sum += name.charCodeAt(i);
     return AVATAR_COLORS[sum % AVATAR_COLORS.length];
 }
 
-function formatTime(isoString) {
+export function formatTime(isoString) {
     if (!isoString) return "";
     return new Date(isoString).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
 }
 
 // Formate une date ISO en chaine lisible pour les separateurs de jour
-function formatDate(isoString) {
+export function formatDate(isoString) {
     if (!isoString) return "";
     const date = new Date(isoString);
     const today = new Date();
@@ -36,13 +38,14 @@ function formatDate(isoString) {
 }
 
 // Extrait la date (sans heure) d'une chaine ISO pour comparaison
-function getDateKey(isoString) {
+export function getDateKey(isoString) {
     if (!isoString) return "";
     return new Date(isoString).toDateString();
 }
 
-function renderConversationList(conversations, currentConversationId, onClickCallback, onSettingsCallback) {
+export function renderConversationList(conversations, currentConversationId, onClickCallback, onSettingsCallback) {
     const list = document.getElementById("conversationList");
+    if (!list) return;
     list.innerHTML = "";
 
     if (conversations.length === 0) {
@@ -63,10 +66,20 @@ function renderConversationList(conversations, currentConversationId, onClickCal
 
         const color = getAvatarColor(conv.other_username);
 
-        // Affiche un indicateur si la conversation est verrouillee
-        let preview = conv.last_message || "Nouvelle discussion";
+        // Affiche un apercu propre selon l'etat de verrouillage et de chiffrement
+        let preview = "Nouvelle discussion";
         if (conv.has_password) {
-            preview = "🔒 " + (conv.last_message || "Protégée par mot de passe");
+            if (conv.unlocked && conv.last_message && !isEncryptedPayload(conv.last_message) && !conv.last_message.startsWith("🔒 [Message") && !conv.last_message.startsWith("⚠️")) {
+                preview = "🔒 " + conv.last_message;
+            } else {
+                preview = "🔒 Discussion protégée par mot de passe";
+            }
+        } else if (conv.last_message) {
+            if (isEncryptedPayload(conv.last_message) || conv.last_message.startsWith("🔒 [Message") || conv.last_message.startsWith("⚠️")) {
+                preview = "🔒 Message chiffré";
+            } else {
+                preview = conv.last_message;
+            }
         }
 
         const avatarSpan = document.createElement("span");
@@ -111,8 +124,9 @@ function renderConversationList(conversations, currentConversationId, onClickCal
     });
 }
 
-function renderMessages(messages, currentUser) {
+export function renderMessages(messages, currentUser) {
     const zone = document.getElementById("messages");
+    if (!zone) return;
     zone.innerHTML = "";
 
     if (messages.length === 0) {
@@ -123,13 +137,13 @@ function renderMessages(messages, currentUser) {
         return;
     }
 
-    // Affiche les messages avec separateurs de jour automatiques
     messages.forEach(msg => appendMessageToDOM(msg, currentUser));
     scrollToBottom();
 }
 
-function appendMessageToDOM(msg, currentUser) {
+export function appendMessageToDOM(msg, currentUser) {
     const zone = document.getElementById("messages");
+    if (!zone) return;
 
     // Pas de doublon
     if (zone.querySelector(`[data-msg-id="${msg.id}"]`)) return;
@@ -180,6 +194,9 @@ function appendMessageToDOM(msg, currentUser) {
 
     const bubble = document.createElement("div");
     bubble.className = "message-bubble";
+    if (msg.content && (msg.content.startsWith("🔒 [Message") || msg.content.startsWith("⚠️ [Message"))) {
+        bubble.classList.add("message-bubble-notice");
+    }
     bubble.textContent = msg.content;
 
     const time = document.createElement("span");
@@ -192,27 +209,37 @@ function appendMessageToDOM(msg, currentUser) {
     zone.appendChild(div);
 }
 
-function scrollToBottom() {
+export function scrollToBottom() {
     const zone = document.getElementById("messages");
-    zone.scrollTop = zone.scrollHeight;
+    if (zone) zone.scrollTop = zone.scrollHeight;
 }
 
-function showWelcomeScreen() {
+export function showWelcomeScreen() {
     const welcome = document.getElementById("welcomeScreen");
-    if (welcome) welcome.style.display = "";
+    const unlock = document.getElementById("chatUnlockScreen");
+    const messages = document.getElementById("messages");
+    if (welcome) welcome.style.display = "flex";
+    if (unlock) unlock.style.display = "none";
+    if (messages) {
+        messages.style.display = "none";
+        messages.innerHTML = "";
+    }
 }
 
-function hideWelcomeScreen() {
+export function hideWelcomeScreen() {
     const welcome = document.getElementById("welcomeScreen");
     if (welcome) welcome.style.display = "none";
 }
 
-function updateChatHeader(username) {
+export function updateChatHeader(username) {
     const color = getAvatarColor(username);
     const headerAvatar = document.getElementById("headerAvatar");
-    headerAvatar.className = `avatar ${color}`;
-    headerAvatar.textContent = getInitials(username);
-    document.getElementById("chatTitle").textContent = username;
+    if (headerAvatar) {
+        headerAvatar.className = `avatar ${color}`;
+        headerAvatar.textContent = getInitials(username);
+    }
+    const chatTitle = document.getElementById("chatTitle");
+    if (chatTitle) chatTitle.textContent = username;
 
     const statusBtn = document.getElementById("chatStatusBtn");
     const placeholder = document.getElementById("chatStatusPlaceholder");
@@ -220,20 +247,98 @@ function updateChatHeader(username) {
     if (placeholder) placeholder.style.display = "none";
 }
 
-function resetChatHeader() {
+export function resetChatHeader() {
     const headerAvatar = document.getElementById("headerAvatar");
-    headerAvatar.className = "avatar purple";
-    headerAvatar.textContent = "--";
-    document.getElementById("chatTitle").textContent = "Sélectionnez une discussion";
+    if (headerAvatar) {
+        headerAvatar.className = "avatar purple";
+        headerAvatar.textContent = "--";
+    }
+    const chatTitle = document.getElementById("chatTitle");
+    if (chatTitle) chatTitle.textContent = "Sélectionnez une discussion";
 
     const statusBtn = document.getElementById("chatStatusBtn");
     const placeholder = document.getElementById("chatStatusPlaceholder");
     if (statusBtn) statusBtn.style.display = "none";
     if (placeholder) placeholder.style.display = "";
+
+    const lockBtn = document.getElementById("lockConvBtn");
+    if (lockBtn) lockBtn.style.display = "none";
 }
 
-function setActiveSidebarConversation(convId) {
+export function setActiveSidebarConversation(convId) {
     document.querySelectorAll(".conversation").forEach(btn => {
         btn.classList.toggle("active", parseInt(btn.dataset.id) === convId);
     });
+}
+
+export function renderProfileLoggedOut() {
+    const profileSection = document.getElementById("profileSection");
+    if (!profileSection) return;
+    profileSection.innerHTML = "";
+
+    const actionsDiv = document.createElement("div");
+    actionsDiv.className = "auth-actions";
+
+    const loginLink = document.createElement("a");
+    loginLink.href = "login.html";
+    loginLink.className = "auth-btn auth-btn-primary";
+    loginLink.textContent = "Connexion";
+
+    const registerLink = document.createElement("a");
+    registerLink.href = "register.html";
+    registerLink.className = "auth-btn auth-btn-secondary";
+    registerLink.textContent = "Inscription";
+
+    actionsDiv.appendChild(loginLink);
+    actionsDiv.appendChild(registerLink);
+    profileSection.appendChild(actionsDiv);
+
+    const inp = document.getElementById("messageInput");
+    const btn = document.getElementById("sendButton");
+    if (inp) { inp.disabled = true; inp.placeholder = "Connectez-vous pour discuter..."; }
+    if (btn) btn.disabled = true;
+}
+
+export function renderProfileLoggedIn(user) {
+    const profileSection = document.getElementById("profileSection");
+    if (!profileSection) return;
+    profileSection.innerHTML = "";
+
+    const color = getAvatarColor(user.username);
+
+    const avatarDiv = document.createElement("div");
+    avatarDiv.className = `avatar ${color}`;
+    avatarDiv.textContent = getInitials(user.username);
+
+    const infoDiv = document.createElement("div");
+    infoDiv.className = "profile-info";
+
+    const strong = document.createElement("strong");
+    strong.textContent = user.username;
+
+    const small = document.createElement("small");
+    small.textContent = "En ligne";
+
+    infoDiv.appendChild(strong);
+    infoDiv.appendChild(small);
+
+    const logoutBtn = document.createElement("button");
+    logoutBtn.id = "logoutButton";
+    logoutBtn.className = "logout-button";
+    logoutBtn.textContent = "Déconnexion";
+    logoutBtn.addEventListener("click", () => {
+        localStorage.removeItem("pvchat_token");
+        localStorage.removeItem("pvchat_username");
+        localStorage.removeItem("pvchat_user_id");
+        window.location.reload();
+    });
+
+    profileSection.appendChild(avatarDiv);
+    profileSection.appendChild(infoDiv);
+    profileSection.appendChild(logoutBtn);
+
+    const inp = document.getElementById("messageInput");
+    const btn = document.getElementById("sendButton");
+    if (inp) { inp.disabled = true; inp.placeholder = "Sélectionnez une conversation..."; }
+    if (btn) btn.disabled = true;
 }

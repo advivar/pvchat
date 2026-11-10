@@ -1,0 +1,260 @@
+/* Modale de diagnostic E2EE et inspection des clés cryptographiques */
+
+.chat-status-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 3px 8px;
+    margin-top: 2px;
+    background: rgba(139, 92, 246, 0.12);
+    border: 1px solid rgba(139, 92, 246, 0.25);
+    border-radius: 6px;
+    color: #c4b5fd;
+    font-size: 11px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+    text-align: left;
+}
+
+.chat-status-btn:hover {
+    background: rgba(139, 92, 246, 0.22);
+    border-color: var(--purple);
+    color: #ffffff;
+}
+
+.chat-status-placeholder {
+    color: var(--muted);
+    font-size: 11px;
+    margin-top: 2px;
+}
+
+.status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #10b981;
+    box-shadow: 0 0 6px #10b981;
+    display: inline-block;
+    flex-shrink: 0;
+}
+
+.modal-card-large {
+    max-width: 680px;
+    width: 92%;
+    max-height: 88vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-subtitle {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 3px;
+}
+
+.modal-body-scrollable {
+    overflow-y: auto;
+    padding-right: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.modal-body-scrollable::-webkit-scrollbar {
+    width: 6px;
+}
+
+.modal-body-scrollable::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 3px;
+}
+
+.crypto-section {
+    display: flex;
+    flex-direction: column;
+    background: var(--sidebar);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    gap: 12px;
+}
+
+.crypto-section-header-flex {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.crypto-section-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.crypto-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 10px;
+}
+
+.crypto-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.crypto-card-label {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+.crypto-card-value {
+    font-size: 13px;
+    color: var(--text);
+    font-family: Consolas, monospace;
+    word-break: break-all;
+}
+
+/* Zone d'authentification pour affichage des cles */
+.keys-auth-box {
+    background: var(--panel);
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.keys-auth-desc {
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.4;
+    margin: 0;
+}
+
+.keys-auth-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.keys-auth-row input {
+    flex: 1;
+}
+
+.keys-auth-error {
+    font-size: 12px;
+    color: #f87171;
+    margin: 0;
+}
+
+.btn-sm {
+    padding: 6px 12px;
+    font-size: 12px;
+    border-radius: 6px;
+}
+
+/* Zone d'affichage des clés inspectées */
+.keys-display-area {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    animation: fadeIn 0.2s ease-out;
+}
+
+.key-item {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.key-item-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.key-item-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.key-item-sub {
+    font-size: 11px;
+    color: var(--muted);
+    margin: 0;
+}
+
+.key-badge-danger {
+    font-size: 11px;
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.35);
+    color: #fca5a5;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.key-code-block {
+    background: #090b12;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-family: Consolas, 'Fira Code', monospace;
+    font-size: 11px;
+    line-height: 1.4;
+    color: #93c5fd;
+    word-break: break-all;
+    white-space: pre-wrap;
+    max-height: 100px;
+    overflow-y: auto;
+    margin: 4px 0 0;
+}
+
+.key-code-private {
+    color: #fca5a5;
+    background: #11090d;
+    border-color: rgba(239, 68, 68, 0.25);
+}
+
+.copy-key-btn {
+    background: var(--hover);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 4px 9px;
+    font-size: 11px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.copy-key-btn:hover {
+    background: var(--purple);
+    border-color: var(--purple);
+    color: #fff;
+}
+
+.copy-key-btn.btn-copied {
+    background: #10b981;
+    border-color: #10b981;
+    color: #fff;
+}
+

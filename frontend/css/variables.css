@@ -1,0 +1,12 @@
+/* Variables de design et palette de couleurs */
+:root {
+    --background: #0b0d14;
+    --sidebar: #11141e;
+    --panel: #171b28;
+    --hover: #222638;
+    --border: #292e40;
+    --text: #f1f3f9;
+    --muted: #9299ad;
+    --purple: #8b5cf6;
+}
+

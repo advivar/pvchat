@@ -1,8 +1,9 @@
 // Routes utilisateurs : cles publiques E2EE et recherche d'utilisateurs
 
 const express = require('express');
-const { pool } = require('../db/pool');
+
 const authMiddleware = require('../middleware/auth');
+const userRepo = require('../db/repositories/userRepository');
 
 const router = express.Router();
 
@@ -16,10 +17,7 @@ router.put('/me/public-key', authMiddleware, async (req, res) => {
     }
 
     try {
-        await pool.query(
-            'UPDATE users SET public_key = $1 WHERE id = $2',
-            [public_key, userId]
-        );
+        await userRepo.updatePublicKey(userId, public_key);
         res.json({ message: 'Cle publique mise a jour avec succes' });
     } catch (err) {
         console.error('Erreur MAJ cle publique :', err);
@@ -27,17 +25,14 @@ router.put('/me/public-key', authMiddleware, async (req, res) => {
     }
 });
 
-// Recherche des utilisateurs pour autocompletion (place avant /:id pour eviter les collisions)
+// Recherche des utilisateurs pour autocompletion
 router.get('/search', authMiddleware, async (req, res) => {
     const rawQuery = String(req.query.q || '').trim().slice(0, 50);
     if (!rawQuery) return res.json([]);
 
     try {
-        const result = await pool.query(
-            'SELECT id, username FROM users WHERE username ILIKE $1 AND id != $2 ORDER BY username ASC LIMIT 10',
-            [`%${rawQuery}%`, req.user.userId]
-        );
-        res.json(result.rows);
+        const users = await userRepo.searchUsers(rawQuery, req.user.userId);
+        res.json(users);
     } catch (err) {
         console.error('Erreur recherche users :', err);
         res.status(500).json({ error: 'Erreur serveur.' });
@@ -53,16 +48,13 @@ router.get('/:id/public-key', authMiddleware, async (req, res) => {
     }
 
     try {
-        const result = await pool.query(
-            'SELECT public_key FROM users WHERE id = $1',
-            [targetUserId]
-        );
+        const publicKey = await userRepo.getPublicKey(targetUserId);
 
-        if (result.rows.length === 0 || !result.rows[0].public_key) {
+        if (!publicKey) {
             return res.status(404).json({ error: 'Cle publique non trouvee' });
         }
 
-        res.json({ public_key: result.rows[0].public_key });
+        res.json({ public_key: publicKey });
     } catch (err) {
         console.error('Erreur recup cle publique :', err);
         res.status(500).json({ error: 'Erreur serveur.' });
@@ -70,4 +62,3 @@ router.get('/:id/public-key', authMiddleware, async (req, res) => {
 });
 
 module.exports = router;
-

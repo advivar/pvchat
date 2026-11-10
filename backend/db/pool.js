@@ -45,6 +45,7 @@ async function initDb() {
             );
 
             ALTER TABLE users ADD COLUMN IF NOT EXISTS public_key TEXT;
+            ALTER TABLE conversations DROP COLUMN IF EXISTS password_hash;
         `);
         console.log('Base de donnees initialisee avec succes.');
     } catch (err) {
