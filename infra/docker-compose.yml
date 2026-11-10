@@ -25,6 +25,7 @@ services:
       PORT: 3000
       JWT_SECRET: ${JWT_SECRET:-pvchat_secret_jwt_change_in_production}
       DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
     volumes:
       - ../backend:/app
       - /app/node_modules

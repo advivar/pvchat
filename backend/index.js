@@ -22,16 +22,21 @@ app.set('trust proxy', 1);
 
 app.use(express.json({ limit: '1mb' }));
 
-// Configuration CORS securisee
+// Configuration CORS
 const isAllowedOrigin = (origin) => {
+    // Requetes sans en-tete origin (reverse-proxy Nginx direct, curl, mobile)
     if (!origin || origin === 'null') return true;
-    if (process.env.CORS_ORIGIN) {
-        const allowed = process.env.CORS_ORIGIN.split(',').map(s => s.trim());
-        if (allowed.includes(origin)) return true;
+
+    // Si une liste blanche explicite est definie dans les variables d'environnement
+    if (process.env.CORS_ORIGIN && process.env.CORS_ORIGIN !== '*') {
+        const allowed = process.env.CORS_ORIGIN.split(',').map(s => s.trim().toLowerCase());
+        return allowed.includes(origin.toLowerCase());
     }
-    // Autoriser tout port local de developpement (Docker 8080/9080, LiveServer 5500, direct 3000, etc.)
-    const localRegex = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
-    return localRegex.test(origin);
+
+    // Par defaut (CORS_ORIGIN non defini ou egal a '*'), autoriser toutes les origines.
+    // L'authentification reposant exclusivement sur des tokens JWT Bearer (aucun cookie ambient),
+    // l'API fonctionne directement sur n'importe quelle adresse IP de serveur ou nom de domaine.
+    return true;
 };
 
 app.use(cors({
