@@ -21,6 +21,12 @@ import {
     scrollToBottom,
     renderConversationList
 } from '../ui.js';
+import {
+    initFormatToolbar,
+    applyFormat,
+    setupMessageInteractions,
+    syncInputHighlights
+} from './format.js';
 
 // Derive (ou reutilise) la sharedKey ECDH pour une conversation
 export async function ensureSharedKey(conv, forceRefresh = false) {
@@ -140,6 +146,7 @@ export async function sendMessage() {
     if (!text || !state.currentConversationId) return;
 
     input.value = "";
+    syncInputHighlights(input);
 
     try {
         const conv = state.conversations.find(c => c.id === state.currentConversationId);
@@ -215,7 +222,7 @@ export async function onNewMessage(msg) {
     }
 }
 
-// Initialise les écouteurs de la zone de saisie
+// Initialise les écouteurs de la zone de saisie et la barre de formatage
 export function initMessageComposer() {
     const sendButton = document.getElementById("sendButton");
     const messageInput = document.getElementById("messageInput");
@@ -225,11 +232,37 @@ export function initMessageComposer() {
     }
 
     if (messageInput) {
+        initFormatToolbar(messageInput);
+
         messageInput.addEventListener("keydown", (e) => {
             if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 sendMessage();
+                return;
+            }
+
+            // Raccourcis clavier (Ctrl+B / Cmd+B pour Gras, Ctrl+I pour Italique, etc.)
+            if (e.ctrlKey || e.metaKey) {
+                const key = e.key.toLowerCase();
+                if (key === "b") {
+                    e.preventDefault();
+                    applyFormat(messageInput, "bold");
+                } else if (key === "i") {
+                    e.preventDefault();
+                    applyFormat(messageInput, "italic");
+                } else if (key === "e") {
+                    e.preventDefault();
+                    applyFormat(messageInput, "inline-code");
+                } else if (key === "k") {
+                    e.preventDefault();
+                    applyFormat(messageInput, "code-block");
+                }
             }
         });
+    }
+
+    const messagesZone = document.getElementById("messages");
+    if (messagesZone) {
+        setupMessageInteractions(messagesZone);
     }
 }

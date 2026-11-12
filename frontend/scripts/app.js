@@ -30,6 +30,7 @@ import {
     onNewMessage,
     initMessageComposer
 } from './chat/messages.js';
+import { updateToolbarDisabledState, initFormatToolbar } from './chat/format.js';
 import {
     showInlineUnlockScreen,
     hideInlineUnlockScreen,
@@ -41,6 +42,10 @@ import { initCryptoModal } from './modals/modal-crypto.js';
 import { initSettingsModal, openConversationSettings } from './modals/modal-settings.js';
 
 document.addEventListener("DOMContentLoaded", async () => {
+    // Initialisation immédiate de la barre d'outils de formatage
+    const initialMsgInput = document.getElementById("messageInput");
+    initFormatToolbar(initialMsgInput);
+
     const token = localStorage.getItem("pvchat_token");
 
     if (!token) {
@@ -205,6 +210,7 @@ export async function openConversation(convId) {
         msgInput.placeholder = "Écrire un message...";
     }
     if (sendBtn) sendBtn.disabled = false;
+    updateToolbarDisabledState(false);
 
     await ensureSharedKey(conv);
     await loadAndDisplayMessages(conv);
@@ -234,6 +240,7 @@ function onWsEvent(data) {
                     msgInput.placeholder = "Écrire un message...";
                 }
                 if (sendBtn) sendBtn.disabled = false;
+                updateToolbarDisabledState(false);
                 loadAndDisplayMessages(conv);
             }
         } else {

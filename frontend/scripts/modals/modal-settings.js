@@ -5,6 +5,7 @@ import { apiSetConversationPassword, apiDeleteConversation } from '../api.js';
 import { showWelcomeScreen, resetChatHeader } from '../ui.js';
 import { showInlineUnlockScreen, hideInlineUnlockScreen } from '../chat/unlock.js';
 import { loadAndDisplayMessages, refreshConversations } from '../chat/messages.js';
+import { updateToolbarDisabledState } from '../chat/format.js';
 
 let settingsTargetConvId = null;
 
@@ -208,6 +209,7 @@ export function initSettingsModal() {
                             msgInput.placeholder = "Écrire un message...";
                         }
                         if (sendBtn) sendBtn.disabled = false;
+                        updateToolbarDisabledState(false);
                         await loadAndDisplayMessages(conv);
                     }
                 }

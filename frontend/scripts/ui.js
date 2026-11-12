@@ -1,6 +1,7 @@
 // Gestion de l'affichage des conversations, messages et profils
 
 import { isEncryptedPayload } from './crypto.js';
+import { parseMarkdown, stripMarkdown, updateToolbarDisabledState, syncInputHighlights } from './chat/format.js';
 
 const AVATAR_COLORS = ["purple", "blue", "green", "orange"];
 
@@ -70,7 +71,7 @@ export function renderConversationList(conversations, currentConversationId, onC
         let preview = "Nouvelle discussion";
         if (conv.has_password) {
             if (conv.unlocked && conv.last_message && !isEncryptedPayload(conv.last_message) && !conv.last_message.startsWith("🔒 [Message") && !conv.last_message.startsWith("⚠️")) {
-                preview = "🔒 " + conv.last_message;
+                preview = "🔒 " + stripMarkdown(conv.last_message);
             } else {
                 preview = "🔒 Discussion protégée par mot de passe";
             }
@@ -78,7 +79,7 @@ export function renderConversationList(conversations, currentConversationId, onC
             if (isEncryptedPayload(conv.last_message) || conv.last_message.startsWith("🔒 [Message") || conv.last_message.startsWith("⚠️")) {
                 preview = "🔒 Message chiffré";
             } else {
-                preview = conv.last_message;
+                preview = stripMarkdown(conv.last_message);
             }
         }
 
@@ -103,7 +104,7 @@ export function renderConversationList(conversations, currentConversationId, onC
         // Bouton parametres au survol a droite
         const settingsBtn = document.createElement("button");
         settingsBtn.className = "conv-item-settings-btn";
-        settingsBtn.innerHTML = "⚙";
+        settingsBtn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block;"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>`;
         settingsBtn.title = `Paramètres de ${conv.other_username}`;
         settingsBtn.setAttribute("type", "button");
         settingsBtn.addEventListener("click", (e) => {
@@ -196,8 +197,10 @@ export function appendMessageToDOM(msg, currentUser) {
     bubble.className = "message-bubble";
     if (msg.content && (msg.content.startsWith("🔒 [Message") || msg.content.startsWith("⚠️ [Message"))) {
         bubble.classList.add("message-bubble-notice");
+        bubble.textContent = msg.content;
+    } else {
+        bubble.innerHTML = parseMarkdown(msg.content);
     }
-    bubble.textContent = msg.content;
 
     const time = document.createElement("span");
     time.className = "message-time";
@@ -235,6 +238,9 @@ export function showWelcomeScreen() {
         messages.innerHTML = "";
     }
     closeMobileChat();
+    updateToolbarDisabledState(true);
+    const inp = document.getElementById("messageInput");
+    if (inp) syncInputHighlights(inp);
 }
 
 export function hideWelcomeScreen() {
@@ -306,8 +312,13 @@ export function renderProfileLoggedOut() {
 
     const inp = document.getElementById("messageInput");
     const btn = document.getElementById("sendButton");
-    if (inp) { inp.disabled = true; inp.placeholder = "Connectez-vous pour discuter..."; }
+    if (inp) {
+        inp.disabled = true;
+        inp.placeholder = "Connectez-vous pour discuter...";
+        syncInputHighlights(inp);
+    }
     if (btn) btn.disabled = true;
+    updateToolbarDisabledState(true);
 }
 
 export function renderProfileLoggedIn(user) {
@@ -350,6 +361,11 @@ export function renderProfileLoggedIn(user) {
 
     const inp = document.getElementById("messageInput");
     const btn = document.getElementById("sendButton");
-    if (inp) { inp.disabled = true; inp.placeholder = "Sélectionnez une conversation..."; }
+    if (inp) {
+        inp.disabled = true;
+        inp.placeholder = "Sélectionnez une conversation...";
+        syncInputHighlights(inp);
+    }
     if (btn) btn.disabled = true;
+    updateToolbarDisabledState(true);
 }
