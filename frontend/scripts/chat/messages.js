@@ -4,6 +4,7 @@ import { state } from '../state.js';
 import {
     apiGetMessages,
     apiSendMessage,
+    apiUploadAttachment,
     apiGetConversations,
     apiGetUserPublicKey
 } from '../api.js';
@@ -27,6 +28,11 @@ import {
     setupMessageInteractions,
     syncInputHighlights
 } from './format.js';
+import {
+    clearStagedAttachment,
+    updateAttachmentProgress,
+    showAttachmentNotification
+} from './attachments.js';
 
 // Derive (ou reutilise) la sharedKey ECDH pour une conversation
 export async function ensureSharedKey(conv, forceRefresh = false) {
@@ -114,6 +120,7 @@ export async function refreshConversations() {
 // Charge et dechiffre tous les messages d'une discussion
 export async function loadAndDisplayMessages(conv) {
     try {
+        clearStagedAttachment();
         const messages = await apiGetMessages(conv.id);
 
         // S'assurer que la cle partagee E2EE est disponible
@@ -125,9 +132,10 @@ export async function loadAndDisplayMessages(conv) {
         }
 
         if (messages.length > 0) {
-            const last = messages[messages.length - 1].content;
-            if (!last.startsWith("🔒 [") && !last.startsWith("⚠️")) {
-                conv.last_message = last;
+            const last = messages[messages.length - 1];
+            const lastText = last.content || (last.attachment_name ? `📎 ${last.attachment_name}` : "");
+            if (lastText && !lastText.startsWith("🔒 [") && !lastText.startsWith("⚠️")) {
+                conv.last_message = lastText;
             }
         }
 
@@ -138,37 +146,85 @@ export async function loadAndDisplayMessages(conv) {
     }
 }
 
-// Envoie un message texte chiffre de bout en bout
+// Envoie un message texte chiffre de bout en bout avec ou sans pièces jointes
 export async function sendMessage() {
     const input = document.getElementById("messageInput");
     if (!input) return;
     const text = input.value.trim();
-    if (!text || !state.currentConversationId) return;
+    const hasAttachments = Array.isArray(state.stagedAttachments) && state.stagedAttachments.length > 0;
 
-    input.value = "";
-    syncInputHighlights(input);
+    if (!text && !hasAttachments) return;
+    if (!state.currentConversationId) return;
+
+    const sendButton = document.getElementById("sendButton");
+    if (sendButton) sendButton.disabled = true;
+
+    const uploadedMetas = [];
+    const attachmentIds = [];
 
     try {
+        // 1. Upload préalable de chaque pièce jointe si présente
+        if (hasAttachments) {
+            const filesToUpload = [...state.stagedAttachments];
+            const total = filesToUpload.length;
+
+            for (let i = 0; i < total; i++) {
+                const item = filesToUpload[i];
+                try {
+                    const uploaded = await apiUploadAttachment(
+                        state.currentConversationId,
+                        item.file,
+                        (percent) => {
+                            const totalPercent = Math.round(((i + (percent / 100)) / total) * 100);
+                            updateAttachmentProgress(totalPercent);
+                        }
+                    );
+                    uploadedMetas.push(uploaded);
+                    attachmentIds.push(uploaded.id);
+                } catch (uploadErr) {
+                    console.error("Erreur upload pièce jointe :", uploadErr);
+                    showAttachmentNotification(`Échec sur "${item.name}": ${uploadErr.message || "Erreur transfert"}`, true);
+                    if (sendButton) sendButton.disabled = false;
+                    return;
+                }
+            }
+        }
+
+        input.value = "";
+        syncInputHighlights(input);
+        clearStagedAttachment();
+
         const conv = state.conversations.find(c => c.id === state.currentConversationId);
         let messageToSend = text;
 
         if (conv) {
             await ensureSharedKey(conv);
-            // Chiffrement E2EE exclusivement avec la cle partagee ECDH
-            if (conv.sharedKey) {
+            // Chiffrement E2EE exclusivement avec la cle partagee ECDH si du texte est présent
+            if (conv.sharedKey && text) {
                 messageToSend = await encryptMessage(text, conv.sharedKey);
             }
         }
 
-        const newMsg = await apiSendMessage(state.currentConversationId, messageToSend);
+        const newMsg = await apiSendMessage(state.currentConversationId, messageToSend, attachmentIds);
 
         // Affiche immediatement en clair cote envoyeur
         newMsg.content = text;
+        newMsg.attachments = uploadedMetas;
+        if (uploadedMetas.length > 0) {
+            newMsg.attachment_id = uploadedMetas[0].id;
+            newMsg.attachment_name = uploadedMetas[0].original_name;
+            newMsg.attachment_size = uploadedMetas[0].file_size;
+            newMsg.attachment_mime = uploadedMetas[0].mime_type;
+        }
+
         appendMessageToDOM(newMsg, state.currentUser);
         scrollToBottom();
 
         if (conv) {
-            conv.last_message = text;
+            const previewText = text || (uploadedMetas.length > 0
+                ? (uploadedMetas.length === 1 ? `📎 ${uploadedMetas[0].original_name}` : `📎 ${uploadedMetas.length} fichiers joints`)
+                : "📎 Pièce jointe");
+            conv.last_message = previewText;
             renderConversationList(
                 state.conversations,
                 state.currentConversationId,
@@ -178,6 +234,9 @@ export async function sendMessage() {
         }
     } catch (err) {
         console.error("Erreur envoi message :", err);
+        showAttachmentNotification("Erreur lors de l'envoi du message.", true);
+    } finally {
+        if (sendButton) sendButton.disabled = false;
     }
 }
 
@@ -192,11 +251,14 @@ export async function onNewMessage(msg) {
 
     if (conv) await ensureSharedKey(conv);
 
-    // Dechiffrement E2EE avec la cle partagee ECDH
-    const decryptedText = await decryptConversationMessage(
-        msg.content,
-        conv ? conv.sharedKey : null
-    );
+    // Dechiffrement E2EE avec la cle partagee ECDH si du contenu chiffré est présent
+    let decryptedText = msg.content;
+    if (msg.content) {
+        decryptedText = await decryptConversationMessage(
+            msg.content,
+            conv ? conv.sharedKey : null
+        );
+    }
     msg.content = decryptedText;
 
     // Affichage dans la vue si la conversation est ouverte et non verrouillee
@@ -210,8 +272,18 @@ export async function onNewMessage(msg) {
 
     // Mise a jour de l'apercu dans la sidebar
     if (conv) {
-        if (!decryptedText.startsWith("🔒 [") && !decryptedText.startsWith("⚠️")) {
-            conv.last_message = decryptedText;
+        let previewText = decryptedText;
+        if (!previewText) {
+            if (Array.isArray(msg.attachments) && msg.attachments.length > 1) {
+                previewText = `📎 ${msg.attachments.length} fichiers joints`;
+            } else if (msg.attachment_name) {
+                previewText = `📎 ${msg.attachment_name}`;
+            } else {
+                previewText = "📎 Pièce jointe";
+            }
+        }
+        if (!previewText.startsWith("🔒 [") && !previewText.startsWith("⚠️")) {
+            conv.last_message = previewText;
         }
         renderConversationList(
             state.conversations,

@@ -11,6 +11,8 @@ const { initWebSocket } = require('./ws/socket');
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
 const conversationRoutes = require('./routes/conversations');
+const attachmentRoutes = require('./routes/attachments');
+const { initStorageCleanup } = require('./services/storageService');
 
 const app = express();
 
@@ -55,6 +57,7 @@ app.use(cors({
 app.use('/', authRoutes);
 app.use('/users', userRoutes);
 app.use('/conversations', conversationRoutes);
+app.use('/attachments', attachmentRoutes);
 
 // Gestionnaire d'erreur global (empeche les fuites de stack trace)
 app.use((err, req, res, next) => {
@@ -71,5 +74,6 @@ initWebSocket(server);
 // Lancement du serveur et initialisation de la base de donnees
 server.listen(PORT, async () => {
     await initDb();
+    initStorageCleanup();
     console.log(`Serveur PVCHAT ecoute sur port ${PORT}`);
 });

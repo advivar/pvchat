@@ -12,7 +12,10 @@ export const state = {
 
     // Callbacks d'interface partages
     openConversationCallback: null,
-    openSettingsCallback: null
+    openSettingsCallback: null,
+
+    // Pièces jointes en attente d'envoi dans le message courant (tableau d'objets)
+    stagedAttachments: []
 };
 
 // Synchronise le drapeau `unlocked` sur chaque conversation en memoire

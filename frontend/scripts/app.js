@@ -30,6 +30,7 @@ import {
     onNewMessage,
     initMessageComposer
 } from './chat/messages.js';
+import { initAttachmentHandlers } from './chat/attachments.js';
 import { updateToolbarDisabledState, initFormatToolbar } from './chat/format.js';
 import {
     showInlineUnlockScreen,
@@ -137,6 +138,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     // Initialisation des modules UI et modales
     initMessageComposer();
+    initAttachmentHandlers();
     initUnlockEvents();
     initNewChatModal(openConversation);
     initInfoModal();

@@ -1,7 +1,8 @@
 // Gestion de l'affichage des conversations, messages et profils
 
 import { isEncryptedPayload } from './crypto.js';
-import { parseMarkdown, stripMarkdown, updateToolbarDisabledState, syncInputHighlights } from './chat/format.js';
+import { parseMarkdown, stripMarkdown, updateToolbarDisabledState, syncInputHighlights, escapeHtml } from './chat/format.js';
+import { formatFileSize, getFileIconSvg, openImageLightbox } from './chat/attachments.js';
 
 const AVATAR_COLORS = ["purple", "blue", "green", "orange"];
 
@@ -15,6 +16,15 @@ export function getAvatarColor(name) {
     let sum = 0;
     for (let i = 0; i < name.length; i++) sum += name.charCodeAt(i);
     return AVATAR_COLORS[sum % AVATAR_COLORS.length];
+}
+
+// Détecte si une pièce jointe est une image d'après son MIME type ou son extension
+export function isImageAttachment(att) {
+    if (!att) return false;
+    const mime = (att.mime_type || '').toLowerCase().trim();
+    if (mime.startsWith('image/')) return true;
+    const name = (att.original_name || '').toLowerCase().trim();
+    return /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i.test(name);
 }
 
 export function formatTime(isoString) {
@@ -193,13 +203,141 @@ export function appendMessageToDOM(msg, currentUser) {
         content.appendChild(author);
     }
 
+    const token = localStorage.getItem("pvchat_token") || "";
+    const hasText = Boolean(msg.content && msg.content.trim().length > 0);
+
+    // Rassemble la liste des pièces jointes (support unitaire ou multiple, avec parsing sécurisé si chaîne JSON)
+    let attachmentsList = [];
+    let rawAtts = msg.attachments;
+    if (typeof rawAtts === "string") {
+        try {
+            rawAtts = JSON.parse(rawAtts);
+        } catch {
+            rawAtts = [];
+        }
+    }
+    if (Array.isArray(rawAtts) && rawAtts.length > 0) {
+        attachmentsList = rawAtts;
+    } else if (msg.attachment_id) {
+        attachmentsList = [{
+            id: msg.attachment_id,
+            original_name: msg.attachment_name,
+            file_size: msg.attachment_size,
+            mime_type: msg.attachment_mime
+        }];
+    }
+
     const bubble = document.createElement("div");
     bubble.className = "message-bubble";
-    if (msg.content && (msg.content.startsWith("🔒 [Message") || msg.content.startsWith("⚠️ [Message"))) {
-        bubble.classList.add("message-bubble-notice");
-        bubble.textContent = msg.content;
-    } else {
-        bubble.innerHTML = parseMarkdown(msg.content);
+
+    if (attachmentsList.length > 0) {
+        bubble.classList.add("has-attachment");
+
+        // Encart unifié regroupant toutes les pièces jointes du message (images + autres fichiers)
+        const encart = document.createElement("div");
+        encart.className = "message-attachments-encart";
+
+        const images = attachmentsList.filter(isImageAttachment);
+        const files = attachmentsList.filter(att => !isImageAttachment(att));
+
+        if (images.length > 0 && files.length === 0) {
+            bubble.classList.add("images-only");
+            encart.classList.add("images-only");
+        }
+
+        // 1. Galerie d'images compacte et grand format
+        if (images.length > 0) {
+            const gallery = document.createElement("div");
+            const galleryCountClass = images.length === 1 ? "count-1" :
+                                      images.length === 2 ? "count-2" :
+                                      images.length === 3 ? "count-3" :
+                                      images.length === 4 ? "count-4" : "count-multi";
+            gallery.className = `message-images-gallery ${galleryCountClass}`;
+
+            images.forEach(imgAtt => {
+                const imgItem = document.createElement("div");
+                imgItem.className = "message-image-item";
+                imgItem.title = `Cliquer pour agrandir "${escapeHtml(imgAtt.original_name || 'image')}"`;
+
+                const downloadUrl = `/api/attachments/${imgAtt.id}/download?token=${encodeURIComponent(token)}`;
+                const inlineUrl = `${downloadUrl}&view=inline`;
+
+                const img = document.createElement("img");
+                img.src = inlineUrl;
+                img.alt = imgAtt.original_name || "Image jointe";
+                img.className = "message-attachment-image";
+                img.loading = "lazy";
+
+                img.onerror = () => {
+                    img.style.display = "none";
+                    const fallback = document.createElement("div");
+                    fallback.className = "message-image-fallback";
+                    fallback.innerHTML = `<span>🖼️ ${escapeHtml(imgAtt.original_name || 'Image')}</span>`;
+                    imgItem.appendChild(fallback);
+                };
+
+                imgItem.appendChild(img);
+
+                // Clic sur l'image : ouvre la Lightbox en grand au centre de l'écran (sans téléchargement)
+                imgItem.addEventListener("click", (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    openImageLightbox(inlineUrl, imgAtt.original_name || "Image", downloadUrl);
+                });
+
+                gallery.appendChild(imgItem);
+            });
+
+            encart.appendChild(gallery);
+        }
+
+        // 2. Liste des autres fichiers (documents, pdf, zip...)
+        if (files.length > 0) {
+            const filesList = document.createElement("div");
+            filesList.className = "message-files-list";
+
+            files.forEach(fileAtt => {
+                const downloadUrl = `/api/attachments/${fileAtt.id}/download?token=${encodeURIComponent(token)}`;
+
+                const card = document.createElement("a");
+                card.href = downloadUrl;
+                card.download = fileAtt.original_name || "piece-jointe";
+                card.className = "message-attachment-card";
+                card.title = `Télécharger "${escapeHtml(fileAtt.original_name || 'fichier')}"`;
+
+                card.innerHTML = `
+                    <div class="message-attachment-icon">${getFileIconSvg(fileAtt.mime_type, fileAtt.original_name)}</div>
+                    <div class="message-attachment-info">
+                        <span class="message-attachment-name">${escapeHtml(fileAtt.original_name || "Pièce jointe")}</span>
+                        <span class="message-attachment-size">${formatFileSize(fileAtt.file_size)}</span>
+                    </div>
+                    <div class="message-attachment-download-btn" aria-hidden="true">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                    </div>
+                `;
+                filesList.appendChild(card);
+            });
+
+            encart.appendChild(filesList);
+        }
+
+        bubble.appendChild(encart);
+    }
+
+    if (hasText) {
+        const textWrapper = document.createElement("div");
+        textWrapper.className = "message-text";
+        if (msg.content.startsWith("🔒 [Message") || msg.content.startsWith("⚠️ [Message")) {
+            textWrapper.classList.add("message-bubble-notice");
+            textWrapper.textContent = msg.content;
+        } else {
+            textWrapper.innerHTML = parseMarkdown(msg.content);
+        }
+        bubble.appendChild(textWrapper);
     }
 
     const time = document.createElement("span");

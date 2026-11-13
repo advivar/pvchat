@@ -25,6 +25,24 @@ CREATE TABLE IF NOT EXISTS messages (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Table des pieces jointes
+CREATE TABLE IF NOT EXISTS attachments (
+    id VARCHAR(64) PRIMARY KEY,
+    conversation_id INT REFERENCES conversations(id) ON DELETE CASCADE,
+    message_id INT REFERENCES messages(id) ON DELETE SET NULL,
+    uploader_id INT REFERENCES users(id) ON DELETE CASCADE,
+    original_name VARCHAR(255) NOT NULL,
+    file_size BIGINT NOT NULL,
+    mime_type VARCHAR(100),
+    storage_path VARCHAR(500) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_attachments_conv ON attachments(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_attachments_msg ON attachments(message_id);
+
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachment_id VARCHAR(64) REFERENCES attachments(id) ON DELETE SET NULL;
+
 -- Parametres utilisateur par conversation (suppression, mot de passe)
 CREATE TABLE IF NOT EXISTS conversation_settings (
     id SERIAL PRIMARY KEY,

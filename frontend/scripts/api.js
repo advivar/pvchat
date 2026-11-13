@@ -49,15 +49,69 @@ export async function apiGetMessages(convId) {
     return await res.json();
 }
 
-export async function apiSendMessage(convId, content) {
+export async function apiSendMessage(convId, content, attachmentIds = null) {
+    const payload = { content };
+    if (Array.isArray(attachmentIds)) {
+        payload.attachmentIds = attachmentIds;
+        if (attachmentIds.length > 0) {
+            payload.attachmentId = attachmentIds[0];
+        }
+    } else if (attachmentIds) {
+        payload.attachmentId = attachmentIds;
+    }
     const res = await fetch(`${API_BASE}/conversations/${convId}/messages`, {
         method: "POST",
         headers: authHeaders(),
-        body: JSON.stringify({ content })
+        body: JSON.stringify(payload)
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Erreur serveur");
     return data;
+}
+
+// Upload d'une pièce jointe avec suivi de la progression
+export function apiUploadAttachment(convId, file, onProgress = null) {
+    return new Promise((resolve, reject) => {
+        const token = localStorage.getItem("pvchat_token");
+        const xhr = new XMLHttpRequest();
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("conversation_id", convId);
+
+        xhr.open("POST", `${API_BASE}/attachments/upload?conversation_id=${encodeURIComponent(convId)}`);
+        if (token) {
+            xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+        }
+
+        if (xhr.upload && onProgress) {
+            xhr.upload.addEventListener("progress", (e) => {
+                if (e.lengthComputable) {
+                    const percent = Math.round((e.loaded / e.total) * 100);
+                    onProgress(percent, e.loaded, e.total);
+                }
+            });
+        }
+
+        xhr.onload = () => {
+            let data = null;
+            try {
+                data = JSON.parse(xhr.responseText);
+            } catch {
+                data = { error: "Réponse serveur invalide." };
+            }
+
+            if (xhr.status >= 200 && xhr.status < 300) {
+                resolve(data);
+            } else {
+                reject(new Error(data.error || `Erreur transfert (${xhr.status})`));
+            }
+        };
+
+        xhr.onerror = () => reject(new Error("Erreur réseau lors de l'envoi du fichier."));
+        xhr.ontimeout = () => reject(new Error("Délai de connexion dépassé pendant l'envoi."));
+
+        xhr.send(formData);
+    });
 }
 
 export async function apiSearchUsers(query) {

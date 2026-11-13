@@ -329,15 +329,20 @@ export function syncInputHighlights(textarea) {
  */
 export function updateToolbarDisabledState(disabled) {
     const toolbar = document.getElementById("composerToolbar");
-    if (!toolbar) return;
-    const buttons = toolbar.querySelectorAll(".toolbar-btn");
-    buttons.forEach(btn => {
-        btn.disabled = disabled;
-    });
-    if (disabled) {
-        toolbar.classList.add("disabled");
-    } else {
-        toolbar.classList.remove("disabled");
+    if (toolbar) {
+        const buttons = toolbar.querySelectorAll(".toolbar-btn");
+        buttons.forEach(btn => {
+            btn.disabled = disabled;
+        });
+        if (disabled) {
+            toolbar.classList.add("disabled");
+        } else {
+            toolbar.classList.remove("disabled");
+        }
+    }
+    const attachBtn = document.getElementById("attachmentButton");
+    if (attachBtn) {
+        attachBtn.disabled = disabled;
     }
 }
 

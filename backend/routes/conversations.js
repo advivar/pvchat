@@ -11,6 +11,7 @@ const { broadcastToConversation } = require('../ws/socket');
 const conversationRepo = require('../db/repositories/conversationRepository');
 const messageRepo = require('../db/repositories/messageRepository');
 const userRepo = require('../db/repositories/userRepository');
+const attachmentRepo = require('../db/repositories/attachmentRepository');
 
 const router = express.Router();
 
@@ -172,25 +173,68 @@ router.get('/:id/messages', authMiddleware, requireConversationParticipant, asyn
 // Envoyer un message (limite a 20 msgs / 10s, max 20000 chars pour supporter les payloads chiffres E2EE)
 router.post('/:id/messages', authMiddleware, rateLimiter(10000, 20), requireConversationParticipant, async (req, res) => {
     const userId = req.user.userId;
-    const { content } = req.body;
+    const { content, attachmentId, attachmentIds } = req.body;
 
-    if (!content || typeof content !== 'string' || !content.trim()) {
+    const trimmedContent = (typeof content === 'string') ? content.trim() : '';
+
+    let idsToProcess = [];
+    if (Array.isArray(attachmentIds)) {
+        idsToProcess = attachmentIds.filter(id => typeof id === 'string' && id.trim().length > 0);
+    } else if (attachmentId && typeof attachmentId === 'string') {
+        idsToProcess = [attachmentId.trim()];
+    }
+
+    if (!trimmedContent && idsToProcess.length === 0) {
         return res.status(400).json({ error: 'Message vide.' });
     }
 
-    if (content.length > 20000) {
+    if (trimmedContent.length > 20000) {
         return res.status(400).json({ error: 'Le message est trop long.' });
     }
 
     try {
         const conv = req.conversation;
 
+        const validAttachments = [];
+        for (const attId of idsToProcess) {
+            const att = await attachmentRepo.getById(attId);
+            if (att && att.conversation_id === req.convId && att.uploader_id === userId) {
+                validAttachments.push(att);
+            } else {
+                return res.status(400).json({ error: 'Une ou plusieurs pièces jointes sont invalides ou non autorisées.' });
+            }
+        }
+
         // Reveille la conversation pour l'autre participant si elle etait masquee
         const otherUserId = conv.user1_id === userId ? conv.user2_id : conv.user1_id;
         await conversationRepo.setHidden(req.convId, otherUserId, false);
 
-        const newMsg = await messageRepo.createMessage(req.convId, userId, content.trim());
+        const firstId = validAttachments.length > 0 ? validAttachments[0].id : null;
+        const newMsg = await messageRepo.createMessage(
+            req.convId,
+            userId,
+            trimmedContent,
+            firstId
+        );
         newMsg.sender_name = req.user.username;
+
+        newMsg.attachments = [];
+        for (const att of validAttachments) {
+            await attachmentRepo.linkToMessage(att.id, newMsg.id);
+            newMsg.attachments.push({
+                id: att.id,
+                original_name: att.original_name,
+                file_size: parseInt(att.file_size, 10),
+                mime_type: att.mime_type
+            });
+        }
+
+        if (newMsg.attachments.length > 0) {
+            newMsg.attachment_id = newMsg.attachments[0].id;
+            newMsg.attachment_name = newMsg.attachments[0].original_name;
+            newMsg.attachment_size = newMsg.attachments[0].file_size;
+            newMsg.attachment_mime = newMsg.attachments[0].mime_type;
+        }
 
         // Diffusion websocket UNIQUEMENT aux deux participants autorises
         broadcastToConversation([conv.user1_id, conv.user2_id], {
