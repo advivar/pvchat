@@ -10,15 +10,34 @@ function request(options, data = null) {
             res.on('end', () => {
                 let parsed = body;
                 try { parsed = JSON.parse(body); } catch {}
-                resolve({ status: res.statusCode, headers: res.headers, data: parsed });
+                resolve({ status: res.statusCode, headers: res.headers, data: parsed, rawBody: body });
             });
         });
         req.on('error', reject);
         if (data) {
-            req.write(typeof data === 'string' ? data : JSON.stringify(data));
+            req.write(typeof data === 'string' || Buffer.isBuffer(data) ? data : JSON.stringify(data));
         }
         req.end();
     });
+}
+
+function uploadMultipart(options, filename, fileBuffer, fields = {}) {
+    const boundary = '----WebKitFormBoundary' + Math.random().toString(36).substring(2);
+    const parts = [];
+    for (const [key, val] of Object.entries(fields)) {
+        parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${key}"\r\n\r\n${val}\r\n`));
+    }
+    parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: application/octet-stream\r\n\r\n`));
+    parts.push(fileBuffer);
+    parts.push(Buffer.from(`\r\n--${boundary}--\r\n`));
+    const fullBody = Buffer.concat(parts);
+
+    const headers = Object.assign({}, options.headers, {
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        'Content-Length': fullBody.length
+    });
+
+    return request(Object.assign({}, options, { headers }), fullBody);
 }
 
 async function runTests() {
@@ -281,6 +300,69 @@ async function runTests() {
         });
         const isAwokenForAlice = aliceConvsAfter.data.some(c => c.id === convId);
         assert(isAwokenForAlice, `Conversation réveillée automatiquement pour Alice suite au message de Bob`);
+
+        // 12. Tests des pièces jointes (Upload, Liaison message, Téléchargement sécurisé, Contrôle d'accès)
+        console.log('\n[10] Pièces jointes (Upload streamé, Quotas & Sécurité)');
+        const dummyFileContent = Buffer.from('Contenu de test pour la piece jointe PVCHAT 512Mo anti-dos.');
+        const uploadRes = await uploadMultipart({
+            hostname: '127.0.0.1',
+            port: 3000,
+            path: `/attachments/upload?conversation_id=${convId}`,
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${aliceToken}` }
+        }, 'document_test.txt', dummyFileContent, { conversation_id: convId });
+
+        assert(uploadRes.status === 201, `Upload pièce jointe réussi (status 201, got ${uploadRes.status})`);
+        const attachmentId = uploadRes.data ? uploadRes.data.id : null;
+        assert(attachmentId && uploadRes.data.original_name === 'document_test.txt', `Métadonnées pièce jointe valides (${uploadRes.data ? uploadRes.data.original_name : 'null'})`);
+
+        // Envoi d'un message avec la pièce jointe attachée
+        const msgWithAtt = await request({
+            hostname: '127.0.0.1',
+            port: 3000,
+            path: `/conversations/${convId}/messages`,
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${aliceToken}`
+            }
+        }, {
+            content: 'Voici le document joint !',
+            attachmentId: attachmentId
+        });
+        assert(msgWithAtt.status === 201, `Message avec pièce jointe créé (status 201)`);
+        assert(msgWithAtt.data && msgWithAtt.data.attachment_id === attachmentId, `Liaison attachment_id confirmée sur le message`);
+
+        // Téléchargement sécurisé par le destinataire (Bob)
+        const downloadBob = await request({
+            hostname: '127.0.0.1',
+            port: 3000,
+            path: `/attachments/${attachmentId}/download?token=${bobToken}`,
+            method: 'GET'
+        });
+        assert(downloadBob.status === 200, `Bob peut télécharger la pièce jointe (status 200)`);
+        assert(downloadBob.rawBody === dummyFileContent.toString(), `Contenu du fichier téléchargé intègre`);
+
+        // Téléchargement refusé pour un utilisateur tiers non-participant (Charlie)
+        const charlieUser = `charlie_${testSuffix}`;
+        const regCharlie = await request({
+            hostname: '127.0.0.1',
+            port: 3000,
+            path: '/register',
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        }, { username: charlieUser, password });
+        const charlieToken = regCharlie.data ? regCharlie.data.token : null;
+
+        if (charlieToken) {
+            const downloadCharlie = await request({
+                hostname: '127.0.0.1',
+                port: 3000,
+                path: `/attachments/${attachmentId}/download?token=${charlieToken}`,
+                method: 'GET'
+            });
+            assert(downloadCharlie.status === 403, `Accès refusé pour Charlie tiers non participant (status 403, got ${downloadCharlie.status})`);
+        }
 
     } catch (e) {
         console.error('Erreur inattendue pendant les tests :', e);

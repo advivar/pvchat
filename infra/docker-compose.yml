@@ -26,9 +26,11 @@ services:
       JWT_SECRET: ${JWT_SECRET:-pvchat_secret_jwt_change_in_production}
       DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}
       CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      UPLOAD_DIR: /app/uploads
     volumes:
       - ../backend:/app
       - /app/node_modules
+      - pvchat_uploads:/app/uploads
     depends_on:
       postgres:
         condition: service_started
@@ -53,6 +55,8 @@ services:
 volumes:
   pgdata:
     name: pvchat_pgdata
+  pvchat_uploads:
+    name: pvchat_uploads
 
 networks:
   db-net:
